@@ -1,0 +1,37 @@
+# Local config / secrets
+local.env
+backend/src/main/resources/application-local.yml
+backend/src/main/resources/application-local.properties
+
+# Java / Maven
+target/
+*.class
+*.jar
+*.war
+.mvn/wrapper/maven-wrapper.jar
+
+# IDEs
+.idea/
+*.iml
+.vscode/
+.project
+.classpath
+.settings/
+
+# OS
+.DS_Store
+
+# Node / Vite
+node_modules/
+frontend/dist/
+frontend/.vite/
+
+# H2 (file mode)
+*.mv.db
+*.trace.db
+*.lock.db
+data/
+
+# Logs
+*.log
+logs/
