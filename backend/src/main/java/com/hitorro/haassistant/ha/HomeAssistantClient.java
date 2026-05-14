@@ -16,6 +16,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.WebSocket;
 import java.time.Duration;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -92,6 +93,44 @@ public class HomeAssistantClient {
             sendRaw(msg);
             return fut;
         });
+    }
+
+    /**
+     * Subscribe to an HA event type. The handler is invoked for every matching event.
+     * The returned future completes with the subscription id (use it for unsubscribe later).
+     */
+    public CompletableFuture<Integer> subscribe(String eventType, Consumer<JsonNode> handler) {
+        return authFuture.thenApply(v -> {
+            int id = nextId.getAndIncrement();
+            subscriptions.put(id, handler);
+            ObjectNode msg = mapper.createObjectNode();
+            msg.put("id", id);
+            msg.put("type", "subscribe_events");
+            msg.put("event_type", eventType);
+            CompletableFuture<JsonNode> ack = new CompletableFuture<>();
+            pending.put(id, ack);
+            sendRaw(msg);
+            // We don't block on the ack; HA replies success/failure as a normal result.
+            ack.exceptionally(err -> {
+                log.error("subscribe_events({}) failed", eventType, err);
+                subscriptions.remove(id);
+                return null;
+            });
+            return id;
+        });
+    }
+
+    /** Call an HA service. Convenience over send("call_service", ...). */
+    public CompletableFuture<JsonNode> callService(String domain, String service,
+                                                   List<String> entityIds, Map<String, Object> serviceData) {
+        Map<String, Object> extras = new java.util.HashMap<>();
+        extras.put("domain", domain);
+        extras.put("service", service);
+        if (serviceData != null && !serviceData.isEmpty()) extras.put("service_data", serviceData);
+        if (entityIds != null && !entityIds.isEmpty()) {
+            extras.put("target", Map.of("entity_id", entityIds));
+        }
+        return send("call_service", extras);
     }
 
     private void sendRaw(JsonNode node) {
