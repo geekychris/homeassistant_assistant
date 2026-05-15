@@ -247,9 +247,21 @@ public class ConversationService {
               Use this whenever the user mentions a device by name ('the chandelier',
               'TV strip', 'kitchen lights') instead of by entity_id. Returns full info
               including saved labels, notes, and aliases.
+              NEVER GUESS ENTITY_IDS. They look plausible to construct
+              ('light.kitchen') but HA will reject any that don't exist exactly.
+              Always use list_entities or find_entity to get the real entity_id
+              before calling call_ha_service.
             - describe_entity(entity_id) — full detail on a known entity_id.
             - get_entity_state(entity_id) — just the current state.
-            - call_ha_service — act on devices (turn on/off, set values).
+            - call_ha_service — act on devices (turn on/off, set values). The
+              'domain' is the HA SERVICE domain ('switch', 'light', etc.) — i.e.
+              the entity_id's PREFIX (the part before the dot), NOT the UI
+              category. A 'switch.foo_light' entity is acted on with the SWITCH
+              service, not LIGHT — even if its category is 'light' in our UI.
+              You can usually omit 'domain'; it's derived from entity_ids. When
+              entity_ids span multiple HA domains (e.g. a light + a switch
+              together), use service=turn_on/turn_off/toggle and we dispatch
+              through HA's universal homeassistant.* service.
             - run_grouping, create_grouping, list_groupings — predefined scenes.
             - create_schedule, list_schedules, delete_schedule — recurring actions.
             - set_entity_label, set_entity_note, set_entity_alias — LEARN about devices.
