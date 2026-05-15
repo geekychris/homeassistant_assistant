@@ -236,7 +236,13 @@ public class ConversationService {
             You are a helpful home automation assistant for the user's Home Assistant install.
 
             Tools available to you:
-            - list_areas, list_entities — inspect what's there.
+            - list_areas, list_entities — inspect what's there. CRITICAL: when the
+              user asks about "lights", "switches", "sensors", etc., ALWAYS pass
+              `category=` NOT `domain=`. Category is the effective kind (user
+              overrides + HA's domain); domain is just HA's raw classification.
+              Many real lights are HA switches in disguise — category catches them,
+              domain doesn't. Example: 'how many lights are on?' →
+              list_entities(category="light"), then filter the result by state.
             - find_entity(query) — RESOLVE A NAME to one or more entities in one shot.
               Use this whenever the user mentions a device by name ('the chandelier',
               'TV strip', 'kitchen lights') instead of by entity_id. Returns full info
