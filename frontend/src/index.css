@@ -1,8 +1,53 @@
 :root {
   color-scheme: light dark;
+  --bg: Canvas;
+  --fg: CanvasText;
+  --border: #ddd;
+  --muted: #888;
+  --tile: #fafafa;
 }
-body {
+@media (prefers-color-scheme: dark) {
+  :root {
+    --border: #333;
+    --muted: #888;
+    --tile: #1d1d1d;
+  }
+}
+
+* { box-sizing: border-box; }
+
+html, body {
   margin: 0;
-  background: Canvas;
-  color: CanvasText;
+  background: var(--bg);
+  color: var(--fg);
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+input, button, select, textarea {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+input[type="text"], textarea {
+  background: var(--tile);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 8px;
+}
+
+@keyframes blink { 50% { opacity: 0.2; } }
+.caret { animation: blink 1s steps(2) infinite; margin-left: 2px; }
+
+/* Mobile tweaks */
+@media (max-width: 640px) {
+  body { font-size: 14px; }
 }

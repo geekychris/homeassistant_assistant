@@ -41,7 +41,13 @@ export default function Automations() {
   }
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24 }}>
+    <div
+      style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
+        gap: 24,
+      }}
+    >
       <section>
         <h2>Schedules</h2>
         {schedules.length === 0 && (

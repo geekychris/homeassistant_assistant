@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="96" fill="#1a1a1a"/>
+  <path d="M256 96 L416 224 V416 H336 V288 H176 V416 H96 V224 Z" fill="#4ade80"/>
+  <text x="256" y="396" font-family="-apple-system, BlinkMacSystemFont, system-ui, sans-serif"
+        font-size="96" font-weight="700" text-anchor="middle" fill="#1a1a1a">HA</text>
+</svg>

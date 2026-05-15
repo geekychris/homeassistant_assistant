@@ -14,7 +14,6 @@ export default function App() {
   const [events, setEvents] = useState<WsEvent[]>([]);
   const [error, setError] = useState<string | null>(null);
 
-  // Initial load.
   useEffect(() => {
     Promise.all([api.areas(), api.entities()])
       .then(([a, e]) => {
@@ -24,7 +23,6 @@ export default function App() {
       .catch((err) => setError(String(err)));
   }, []);
 
-  // Subscribe to live events.
   useEffect(() => {
     const ws = openWs();
     ws.onmessage = (m) => {
@@ -52,22 +50,37 @@ export default function App() {
   if (error) return <pre style={{ color: 'crimson', padding: 16 }}>{error}</pre>;
 
   return (
-    <main style={{ fontFamily: 'system-ui, sans-serif', padding: '1.5rem', maxWidth: 1080, margin: '0 auto' }}>
-      <header style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 16 }}>
-        <h1 style={{ margin: 0 }}>HA Assistant</h1>
-        <nav style={{ display: 'flex', gap: 4 }}>
+    <main
+      style={{
+        padding: 'env(safe-area-inset-top, 12px) clamp(12px, 4vw, 24px) env(safe-area-inset-bottom, 12px)',
+        maxWidth: 1080,
+        margin: '0 auto',
+      }}
+    >
+      <header
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 12,
+          marginBottom: 16,
+          flexWrap: 'wrap',
+        }}
+      >
+        <h1 style={{ margin: 0, fontSize: 'clamp(18px, 5vw, 24px)' }}>HA Assistant</h1>
+        <nav style={{ display: 'flex', gap: 4, flex: 1, minWidth: 0 }}>
           {(['areas', 'chat', 'automations'] as const).map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
               style={{
                 padding: '6px 12px',
-                background: tab === t ? '#333' : '#eee',
-                color: tab === t ? '#fff' : '#333',
-                border: 'none',
+                background: tab === t ? '#333' : 'var(--tile)',
+                color: tab === t ? '#fff' : 'inherit',
+                border: '1px solid var(--border)',
                 borderRadius: 4,
                 cursor: 'pointer',
                 textTransform: 'capitalize',
+                fontSize: 14,
               }}
             >
               {t}
