@@ -93,6 +93,31 @@ class CallHaServiceToolTest {
     }
 
     @Test
+    void accepts_entity_ids_as_json_encoded_string() {
+        // Real failure mode from llama3.2: 'entity_ids' came in as a STRING containing
+        // a JSON array rather than as an actual JSON array.
+        tool.execute(args("{\"service\":\"turn_off\"," +
+                "\"entity_ids\":\"[\\\"switch.o_kitchen_chandelier\\\",\\\"switch.o_office_light\\\"]\"}"));
+        verify(client).callService(eq("switch"), eq("turn_off"),
+                eq(List.of("switch.o_kitchen_chandelier", "switch.o_office_light")), any());
+    }
+
+    @Test
+    void accepts_entity_ids_as_comma_separated_string() {
+        tool.execute(args("{\"service\":\"turn_off\"," +
+                "\"entity_ids\":\"switch.a, switch.b ,switch.c\"}"));
+        verify(client).callService(eq("switch"), eq("turn_off"),
+                eq(List.of("switch.a", "switch.b", "switch.c")), any());
+    }
+
+    @Test
+    void accepts_entity_ids_as_single_string() {
+        tool.execute(args("{\"service\":\"turn_on\",\"entity_ids\":\"light.kitchen\"}"));
+        verify(client).callService(eq("light"), eq("turn_on"),
+                eq(List.of("light.kitchen")), any());
+    }
+
+    @Test
     void rejects_hallucinated_entity_ids_with_helpful_error() {
         when(entities.findByInstanceIdAndEntityId(eq(INSTANCE), eq("light.invented")))
                 .thenReturn(Optional.empty());

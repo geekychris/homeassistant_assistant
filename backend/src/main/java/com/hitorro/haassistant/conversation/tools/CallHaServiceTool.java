@@ -86,13 +86,57 @@ public class CallHaServiceTool implements Tool {
                 "required", List.of("service"));
     }
 
+    /**
+     * Tolerant entity_ids extraction. Models pass this in several wrong shapes;
+     * we accept all of them:
+     *   ["a","b"]                  ← spec, ideal
+     *   "[\"a\",\"b\"]"            ← JSON-encoded string of an array
+     *   "a,b"  /  "a, b"           ← comma-separated string
+     *   "a"                        ← single id as a plain string
+     *   null / missing             ← empty list
+     */
+    private List<String> parseEntityIds(JsonNode node) {
+        List<String> out = new ArrayList<>();
+        if (node == null || node.isNull()) return out;
+        if (node.isArray()) {
+            node.forEach(n -> {
+                String s = n.asText("").trim();
+                if (!s.isEmpty()) out.add(s);
+            });
+            return out;
+        }
+        if (node.isTextual()) {
+            String s = node.asText().trim();
+            if (s.isEmpty()) return out;
+            if (s.startsWith("[")) {
+                try {
+                    JsonNode parsed = mapper.readTree(s);
+                    if (parsed.isArray()) {
+                        parsed.forEach(n -> {
+                            String v = n.asText("").trim();
+                            if (!v.isEmpty()) out.add(v);
+                        });
+                        return out;
+                    }
+                } catch (Exception ignored) { /* fall through */ }
+            }
+            if (s.contains(",")) {
+                for (String part : s.split(",")) {
+                    String t = part.trim().replaceAll("^[\"']|[\"']$", "");
+                    if (!t.isEmpty()) out.add(t);
+                }
+                return out;
+            }
+            out.add(s);
+        }
+        return out;
+    }
+
     @Override public ToolResult execute(JsonNode args) {
         if (args == null || !args.hasNonNull("service")) return ToolResult.error("service required");
         String service = args.get("service").asText();
 
-        List<String> entityIds = new ArrayList<>();
-        JsonNode ids = args.get("entity_ids");
-        if (ids != null && ids.isArray()) ids.forEach(n -> entityIds.add(n.asText()));
+        List<String> entityIds = parseEntityIds(args.get("entity_ids"));
 
         Map<String, Object> serviceData = null;
         JsonNode data = args.get("service_data");
