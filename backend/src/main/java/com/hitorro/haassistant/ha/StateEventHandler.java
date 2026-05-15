@@ -58,7 +58,8 @@ public class StateEventHandler {
         }
 
         String state = newState.path("state").asText(null);
-        String attributes = newState.path("attributes").toString();
+        JsonNode attrs = newState.path("attributes");
+        String attributes = attrs.toString();
         Instant lastChanged = parseInstantOrNull(newState.path("last_changed").asText(null));
 
         HaEntity ent = entities.findById(entityId).orElseGet(() -> {
@@ -67,6 +68,9 @@ public class StateEventHandler {
         });
         ent.setState(state);
         ent.setAttributes(attributes);
+        ent.setFriendlyName(textOrNull(attrs, "friendly_name"));
+        ent.setDeviceClass(textOrNull(attrs, "device_class"));
+        ent.setUnit(textOrNull(attrs, "unit_of_measurement"));
         ent.setLastChanged(lastChanged);
         ent.touch();
         entities.save(ent);
@@ -83,5 +87,11 @@ public class StateEventHandler {
     private static Instant parseInstantOrNull(String s) {
         if (s == null || s.isBlank()) return null;
         try { return Instant.parse(s); } catch (Exception e) { return null; }
+    }
+
+    private static String textOrNull(JsonNode n, String f) {
+        if (n == null) return null;
+        JsonNode v = n.get(f);
+        return (v == null || v.isNull()) ? null : v.asText();
     }
 }

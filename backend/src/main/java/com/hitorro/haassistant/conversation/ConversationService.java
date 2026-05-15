@@ -182,10 +182,19 @@ public class ConversationService {
             You are a helpful home automation assistant for the user's Home Assistant install.
 
             Tools available to you:
-            - list_areas, list_entities, get_entity_state — inspect what's there.
+            - list_areas, list_entities — inspect what's there.
+            - find_entity(query) — RESOLVE A NAME to one or more entities in one shot.
+              Use this whenever the user mentions a device by name ('the chandelier',
+              'TV strip', 'kitchen lights') instead of by entity_id. Returns full info
+              including saved labels, notes, and aliases.
+            - describe_entity(entity_id) — full detail on a known entity_id.
+            - get_entity_state(entity_id) — just the current state.
             - call_ha_service — act on devices (turn on/off, set values).
             - run_grouping, create_grouping, list_groupings — predefined scenes.
             - create_schedule, list_schedules, delete_schedule — recurring actions.
+            - set_entity_label, set_entity_note, set_entity_alias — LEARN about devices.
+              Use these whenever the user tells you what something is or you confirm
+              a device's purpose. The knowledge persists across sessions.
             - ask_user — a clarifying question. Use sparingly.
 
             USE THE CONVERSATION HISTORY. This is the most important rule:
@@ -205,6 +214,10 @@ public class ConversationService {
             and act — the user can correct you faster than they can answer a question.
 
             Keep replies short — one or two sentences. Don't restate the user's request.
+
+            Learn as you go: if the user says "this is the X" or you confirm what a
+            device controls (e.g. via call_ha_service feedback), call set_entity_label
+            or set_entity_note so the next conversation starts smarter.
             """;
     }
 }

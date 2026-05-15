@@ -22,7 +22,9 @@ public class ListEntitiesTool implements Tool {
 
     @Override public String description() {
         return "List Home Assistant entities, optionally filtered by area_id and/or domain " +
-               "(e.g. 'light', 'switch', 'sensor'). Returns id, name, area_id, state.";
+               "(e.g. 'light', 'switch', 'sensor'). Returns id, friendly_name, area_id, " +
+               "device_class, unit, state. For deeper detail on one entity (notes, aliases, " +
+               "full attributes), use describe_entity.";
     }
 
     @Override public Map<String, Object> parameterSchema() {
@@ -53,9 +55,11 @@ public class ListEntitiesTool implements Tool {
         List<Map<String, Object>> result = rows.stream().map(e -> {
             Map<String, Object> m = new HashMap<>();
             m.put("entity_id", e.getEntityId());
-            m.put("name", e.getName());
+            m.put("friendly_name", e.getFriendlyName() != null ? e.getFriendlyName() : e.getName());
             m.put("area_id", e.getAreaId());
             m.put("domain", e.getDomain());
+            m.put("device_class", e.getDeviceClass());
+            m.put("unit", e.getUnit());
             m.put("state", e.getState());
             return m;
         }).toList();

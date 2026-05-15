@@ -84,7 +84,11 @@ public class RegistrySync {
             JsonNode state = stateByEntityId.get(entityId);
             if (state != null) {
                 ent.setState(state.path("state").asText(null));
-                ent.setAttributes(state.path("attributes").toString());
+                JsonNode attrs = state.path("attributes");
+                ent.setAttributes(attrs.toString());
+                ent.setFriendlyName(textOrNull(attrs, "friendly_name"));
+                ent.setDeviceClass(textOrNull(attrs, "device_class"));
+                ent.setUnit(textOrNull(attrs, "unit_of_measurement"));
                 String lc = state.path("last_changed").asText(null);
                 if (lc != null) ent.setLastChanged(Instant.parse(lc));
             }
