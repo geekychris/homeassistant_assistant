@@ -132,6 +132,35 @@ class ConversationServiceTest {
         assertThat(payload).containsEntry("question", "Which lights?");
     }
 
+    /**
+     * Regression: the system prompt MUST steer the model to resolve pronouns from
+     * conversation history rather than calling ask_user. We caught a case where
+     * "turn it off again" right after "turn on the kitchen chandelier" triggered
+     * an ask_user instead of just acting. The fix was prompt-side; this guards it.
+     */
+    @Test
+    void system_prompt_steers_against_unnecessary_ask_user() throws Exception {
+        ToolRegistry registry = new ToolRegistry(List.of());
+        ConversationService svc = new ConversationService(sessions, messages, registry, ollama, ui);
+
+        org.mockito.ArgumentCaptor<List<Map<String, Object>>> captor =
+                org.mockito.ArgumentCaptor.forClass(List.class);
+        when(ollama.chatStream(captor.capture(), any(), any())).thenReturn(mapper.readTree(
+                "{\"message\":{\"role\":\"assistant\",\"content\":\"ok\"}}"));
+
+        svc.send(1L, "anything");
+
+        Map<String, Object> systemMsg = captor.getValue().get(0);
+        String prompt = (String) systemMsg.get("content");
+        assertThat(prompt.toLowerCase())
+                .as("system prompt should mention pronouns and discourage unnecessary ask_user")
+                .contains("pronoun")
+                .contains("ask_user");
+        assertThat(prompt)
+                .as("should have an explicit example like 'turn it off' resolving from context")
+                .containsIgnoringCase("turn it off");
+    }
+
     @Test
     void unknown_tool_name_returns_error_to_model_but_does_not_throw() throws Exception {
         ToolRegistry registry = new ToolRegistry(List.of());
