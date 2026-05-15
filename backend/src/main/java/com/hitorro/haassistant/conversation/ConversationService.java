@@ -72,10 +72,27 @@ public class ConversationService {
         return messages.findBySessionIdOrderByIdAsc(sessionId);
     }
 
-    public record TurnResult(String assistantText, boolean awaitingUser, String userPrompt) {}
+    /**
+     * @param llmCalls   how many round-trips to Ollama this turn took
+     * @param llmMs      time spent inside chatStream()
+     * @param toolCalls  how many tools were dispatched
+     * @param toolMs     time spent inside tool.execute()
+     * @param totalMs    wall-clock for the whole send() call (includes DB + everything else)
+     */
+    public record TurnResult(
+            String assistantText, boolean awaitingUser, String userPrompt,
+            int llmCalls, long llmMs,
+            int toolCalls, long toolMs,
+            long totalMs) {}
 
     @Transactional
     public TurnResult send(Long sessionId, String userMessage) throws Exception {
+        long startNs = System.nanoTime();
+        long llmNs = 0;
+        long toolNs = 0;
+        int llmCallCount = 0;
+        int toolCallCount = 0;
+
         ConversationSession session = sessions.findById(sessionId)
                 .orElseThrow(() -> new NoSuchElementException("session " + sessionId));
 
@@ -86,18 +103,20 @@ public class ConversationService {
 
         for (int turn = 0; turn < MAX_TURNS; turn++) {
             final int turnIndex = turn;
+            long llmStart = System.nanoTime();
             JsonNode resp = ollama.chatStream(ollamaMessages, toolDefs, token ->
                     ui.broadcast(Map.of(
                             "type", "assistant_token",
                             "sessionId", sessionId,
                             "turn", turnIndex,
                             "token", token)));
+            llmNs += System.nanoTime() - llmStart;
+            llmCallCount++;
             JsonNode msg = resp.path("message");
             String content = msg.path("content").asText("");
             JsonNode toolCalls = msg.path("tool_calls");
 
             if (toolCalls.isArray() && toolCalls.size() > 0) {
-                // Persist the assistant turn that requested the tools.
                 ChatMessage assistantTurn = new ChatMessage(sessionId, ChatMessage.Role.assistant, content);
                 assistantTurn.setToolCallsJson(toolCalls.toString());
                 messages.save(assistantTurn);
@@ -110,12 +129,15 @@ public class ConversationService {
                     JsonNode args = call.path("function").path("arguments");
                     Tool tool = tools.get(name).orElse(null);
                     ToolResult result;
+                    long toolStart = System.nanoTime();
                     if (tool == null) {
                         result = ToolResult.error("unknown tool: " + name);
                     } else {
                         try { result = tool.execute(args); }
                         catch (Exception e) { result = ToolResult.error(e.getMessage()); }
                     }
+                    toolNs += System.nanoTime() - toolStart;
+                    toolCallCount++;
 
                     String resultJson = mapper.writeValueAsString(result.output());
                     ChatMessage toolMsg = new ChatMessage(sessionId, ChatMessage.Role.tool, resultJson);
@@ -131,26 +153,41 @@ public class ConversationService {
                 }
 
                 if (halt) {
-                    // Persist the question as the assistant's surface output and stop.
                     messages.save(new ChatMessage(sessionId, ChatMessage.Role.assistant, haltPrompt));
                     session.touch();
-                    ui.broadcast(Map.of("type", "ask_user", "sessionId", sessionId, "question", haltPrompt));
-                    return new TurnResult(haltPrompt, true, haltPrompt);
+                    long totalMs = (System.nanoTime() - startNs) / 1_000_000;
+                    long llmMs = llmNs / 1_000_000;
+                    long toolMs = toolNs / 1_000_000;
+                    ui.broadcast(Map.of(
+                            "type", "ask_user", "sessionId", sessionId, "question", haltPrompt,
+                            "stats", Map.of("llmCalls", llmCallCount, "llmMs", llmMs,
+                                    "toolCalls", toolCallCount, "toolMs", toolMs,
+                                    "totalMs", totalMs)));
+                    return new TurnResult(haltPrompt, true, haltPrompt,
+                            llmCallCount, llmMs, toolCallCount, toolMs, totalMs);
                 }
-                // Otherwise continue the loop: re-prompt the model with the tool results.
                 continue;
             }
 
-            // No tool calls — final assistant text.
             messages.save(new ChatMessage(sessionId, ChatMessage.Role.assistant, content));
             session.touch();
-            ui.broadcast(Map.of("type", "assistant_message", "sessionId", sessionId, "content", content));
-            return new TurnResult(content, false, null);
+            long totalMs = (System.nanoTime() - startNs) / 1_000_000;
+            long llmMs = llmNs / 1_000_000;
+            long toolMs = toolNs / 1_000_000;
+            ui.broadcast(Map.of(
+                    "type", "assistant_message", "sessionId", sessionId, "content", content,
+                    "stats", Map.of("llmCalls", llmCallCount, "llmMs", llmMs,
+                            "toolCalls", toolCallCount, "toolMs", toolMs,
+                            "totalMs", totalMs)));
+            return new TurnResult(content, false, null,
+                    llmCallCount, llmMs, toolCallCount, toolMs, totalMs);
         }
 
         String giveUp = "(stopped after " + MAX_TURNS + " tool turns without a final answer)";
         messages.save(new ChatMessage(sessionId, ChatMessage.Role.assistant, giveUp));
-        return new TurnResult(giveUp, false, null);
+        long totalMs = (System.nanoTime() - startNs) / 1_000_000;
+        return new TurnResult(giveUp, false, null,
+                llmCallCount, llmNs / 1_000_000, toolCallCount, toolNs / 1_000_000, totalMs);
     }
 
     private List<Map<String, Object>> buildOllamaHistory(Long sessionId) {

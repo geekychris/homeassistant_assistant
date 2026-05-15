@@ -56,8 +56,10 @@ export const api = {
     send<ConversationSession>('POST', '/api/chat/sessions', { title: title ?? 'New chat' }),
   messages: (id: number) => get<ChatMessageRow[]>(`/api/chat/sessions/${id}/messages`),
   send: (id: number, text: string) =>
-    send<{ assistantText: string; awaitingUser: boolean; userPrompt: string | null }>(
-      'POST', `/api/chat/sessions/${id}/messages`, { text }),
+    send<{
+      assistantText: string; awaitingUser: boolean; userPrompt: string | null;
+      llmCalls: number; llmMs: number; toolCalls: number; toolMs: number; totalMs: number;
+    }>('POST', `/api/chat/sessions/${id}/messages`, { text }),
 };
 
 export function openWs(): WebSocket {

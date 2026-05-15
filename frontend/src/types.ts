@@ -74,9 +74,17 @@ export type ChatMessageRow = {
   createdAt: string;
 };
 
+export type TurnStats = {
+  llmCalls: number;
+  llmMs: number;
+  toolCalls: number;
+  toolMs: number;
+  totalMs: number;
+};
+
 export type WsEvent =
   | { type: 'state_changed'; entityId: string; state: string; lastChanged: string }
   | { type: 'entity_removed'; entityId: string }
-  | { type: 'assistant_message'; sessionId: number; content: string }
+  | { type: 'assistant_message'; sessionId: number; content: string; stats?: TurnStats }
   | { type: 'assistant_token'; sessionId: number; turn: number; token: string }
-  | { type: 'ask_user'; sessionId: number; question: string };
+  | { type: 'ask_user'; sessionId: number; question: string; stats?: TurnStats };

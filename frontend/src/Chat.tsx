@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { api } from './api';
-import type { ChatMessageRow, ConversationSession, WsEvent } from './types';
+import type { ChatMessageRow, ConversationSession, TurnStats, WsEvent } from './types';
 import ToolMessage from './ToolMessage';
 
 export default function Chat({ events }: { events: WsEvent[] }) {
@@ -11,6 +11,8 @@ export default function Chat({ events }: { events: WsEvent[] }) {
   const [busy, setBusy] = useState(false);
   const [awaiting, setAwaiting] = useState(false);
   const [streaming, setStreaming] = useState(''); // live token-stream text for the in-flight turn
+  // Stats keyed by assistant ChatMessage.id once we know it (or 'latest' as a fallback).
+  const [statsByMsgId, setStatsByMsgId] = useState<Record<string, TurnStats>>({});
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Bootstrap: load sessions; create one if none exist.
@@ -43,11 +45,24 @@ export default function Chat({ events }: { events: WsEvent[] }) {
       setStreaming((s) => s + last.token);
     } else if (last.type === 'assistant_message') {
       setStreaming('');
-      api.messages(active).then(setMessages);
+      api.messages(active).then((msgs) => {
+        setMessages(msgs);
+        // Pin the stats to the most recent assistant message id.
+        if (last.stats) {
+          const lastAssistant = [...msgs].reverse().find((m) => m.role === 'assistant');
+          if (lastAssistant) setStatsByMsgId((prev) => ({ ...prev, [String(lastAssistant.id)]: last.stats! }));
+        }
+      });
       setAwaiting(false);
     } else if (last.type === 'ask_user') {
       setStreaming('');
-      api.messages(active).then(setMessages);
+      api.messages(active).then((msgs) => {
+        setMessages(msgs);
+        if (last.stats) {
+          const lastAssistant = [...msgs].reverse().find((m) => m.role === 'assistant');
+          if (lastAssistant) setStatsByMsgId((prev) => ({ ...prev, [String(lastAssistant.id)]: last.stats! }));
+        }
+      });
       setAwaiting(true);
     }
   }, [events, active]);
@@ -80,7 +95,18 @@ export default function Chat({ events }: { events: WsEvent[] }) {
       const r = await api.send(active, t);
       setAwaiting(r.awaitingUser);
       setStreaming('');
-      setMessages(await api.messages(active));
+      const msgs = await api.messages(active);
+      setMessages(msgs);
+      const lastAssistant = [...msgs].reverse().find((m) => m.role === 'assistant');
+      if (lastAssistant) {
+        setStatsByMsgId((prev) => ({
+          ...prev,
+          [String(lastAssistant.id)]: {
+            llmCalls: r.llmCalls, llmMs: r.llmMs,
+            toolCalls: r.toolCalls, toolMs: r.toolMs, totalMs: r.totalMs,
+          },
+        }));
+      }
     } catch (e) {
       alert(`send failed: ${e}`);
     } finally {
@@ -181,10 +207,12 @@ export default function Chat({ events }: { events: WsEvent[] }) {
               if (m.role === 'tool') {
                 return <ToolMessage key={m.id} toolName={m.toolName} rawJson={m.content} />;
               }
+              const stats = m.role === 'assistant' ? statsByMsgId[String(m.id)] : undefined;
               return (
                 <div key={m.id} style={{ marginBottom: 12 }}>
                   <div style={{ fontSize: 11, color: '#888' }}>{m.role}</div>
                   <div style={{ whiteSpace: 'pre-wrap', fontSize: 14 }}>{m.content}</div>
+                  {stats && <StatsFooter stats={stats} />}
                 </div>
               );
             })}
@@ -238,6 +266,32 @@ export default function Chat({ events }: { events: WsEvent[] }) {
       </div>
     </div>
   );
+}
+
+function StatsFooter({ stats }: { stats: TurnStats }) {
+  const llmPct = stats.totalMs > 0 ? Math.round((stats.llmMs / stats.totalMs) * 100) : 0;
+  const overhead = Math.max(0, stats.totalMs - stats.llmMs - stats.toolMs);
+  return (
+    <div
+      title={`Wall-clock for this reply broken down by where the time went.\n` +
+             `LLM:   ${stats.llmCalls} call${stats.llmCalls === 1 ? '' : 's'}, ${fmt(stats.llmMs)}\n` +
+             `Tools: ${stats.toolCalls} call${stats.toolCalls === 1 ? '' : 's'}, ${fmt(stats.toolMs)}\n` +
+             `Other: ${fmt(overhead)} (DB writes, WS broadcasts, etc.)\n` +
+             `Total: ${fmt(stats.totalMs)}`}
+      style={{
+        marginTop: 4, fontSize: 11, color: 'var(--muted)',
+        display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center',
+      }}>
+      <span>⚡ {stats.llmCalls} LLM × {fmt(stats.llmMs)}{llmPct ? ` (${llmPct}%)` : ''}</span>
+      {stats.toolCalls > 0 && <span>🔧 {stats.toolCalls} tool × {fmt(stats.toolMs)}</span>}
+      <span>· {fmt(stats.totalMs)} total</span>
+    </div>
+  );
+}
+
+function fmt(ms: number): string {
+  if (ms < 1000) return `${ms}ms`;
+  return `${(ms / 1000).toFixed(1)}s`;
 }
 
 function speak(text: string) {
