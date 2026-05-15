@@ -8,6 +8,7 @@ export type HaEntity = {
   deviceClass: string | null;
   unit: string | null;
   areaId: string | null;
+  deviceId: string | null;
   state: string | null;
   attributes: string | null; // JSON string from HA
 };
