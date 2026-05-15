@@ -64,7 +64,7 @@ class ConversationServiceTest {
         ToolRegistry registry = new ToolRegistry(List.of());
         ConversationService svc = new ConversationService(sessions, messages, registry, ollama, ui);
 
-        when(ollama.chat(any(), any())).thenReturn(mapper.readTree("""
+        when(ollama.chatStream(any(), any(), any())).thenReturn(mapper.readTree("""
                 { "message": { "role": "assistant", "content": "Hello!" } }
                 """));
 
@@ -85,7 +85,7 @@ class ConversationServiceTest {
         ToolRegistry registry = new ToolRegistry(List.of(myTool));
         ConversationService svc = new ConversationService(sessions, messages, registry, ollama, ui);
 
-        when(ollama.chat(any(), any()))
+        when(ollama.chatStream(any(), any(), any()))
                 .thenReturn(mapper.readTree("""
                         { "message": { "role": "assistant", "content": "",
                           "tool_calls": [{ "function": { "name": "list_areas", "arguments": {} } }] } }
@@ -102,7 +102,7 @@ class ConversationServiceTest {
         assertThat(savedMessages).hasSize(4);
         assertThat(savedMessages.get(2).getRole()).isEqualTo(ChatMessage.Role.tool);
         assertThat(savedMessages.get(2).getToolName()).isEqualTo("list_areas");
-        verify(ollama, times(2)).chat(any(), any());
+        verify(ollama, times(2)).chatStream(any(), any(), any());
     }
 
     @Test
@@ -111,7 +111,7 @@ class ConversationServiceTest {
         ToolRegistry registry = new ToolRegistry(List.of(ask));
         ConversationService svc = new ConversationService(sessions, messages, registry, ollama, ui);
 
-        when(ollama.chat(any(), any()))
+        when(ollama.chatStream(any(), any(), any()))
                 .thenReturn(mapper.readTree("""
                         { "message": { "content": "",
                           "tool_calls": [{ "function": { "name": "ask_user", "arguments": {"question":"Which lights?"} } }] } }
@@ -123,7 +123,7 @@ class ConversationServiceTest {
         assertThat(r.userPrompt()).isEqualTo("Which lights?");
         // user, assistant(tool_call), tool, assistant(question)
         assertThat(savedMessages).hasSize(4);
-        verify(ollama, times(1)).chat(any(), any()); // halted before second LLM call
+        verify(ollama, times(1)).chatStream(any(), any(), any()); // halted before second LLM call
         ArgumentCaptor<Object> sent = ArgumentCaptor.forClass(Object.class);
         verify(ui).broadcast(sent.capture());
         @SuppressWarnings("unchecked")
@@ -137,7 +137,7 @@ class ConversationServiceTest {
         ToolRegistry registry = new ToolRegistry(List.of());
         ConversationService svc = new ConversationService(sessions, messages, registry, ollama, ui);
 
-        when(ollama.chat(any(), any()))
+        when(ollama.chatStream(any(), any(), any()))
                 .thenReturn(mapper.readTree("""
                         { "message": { "content": "",
                           "tool_calls": [{ "function": { "name": "no_such", "arguments": {} } }] } }

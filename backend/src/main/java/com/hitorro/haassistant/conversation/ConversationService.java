@@ -80,7 +80,13 @@ public class ConversationService {
         List<Map<String, Object>> toolDefs = tools.all().stream().map(Tool::toOllamaSchema).toList();
 
         for (int turn = 0; turn < MAX_TURNS; turn++) {
-            JsonNode resp = ollama.chat(ollamaMessages, toolDefs);
+            final int turnIndex = turn;
+            JsonNode resp = ollama.chatStream(ollamaMessages, toolDefs, token ->
+                    ui.broadcast(Map.of(
+                            "type", "assistant_token",
+                            "sessionId", sessionId,
+                            "turn", turnIndex,
+                            "token", token)));
             JsonNode msg = resp.path("message");
             String content = msg.path("content").asText("");
             JsonNode toolCalls = msg.path("tool_calls");

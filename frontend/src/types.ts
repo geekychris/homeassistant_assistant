@@ -52,4 +52,5 @@ export type WsEvent =
   | { type: 'state_changed'; entityId: string; state: string; lastChanged: string }
   | { type: 'entity_removed'; entityId: string }
   | { type: 'assistant_message'; sessionId: number; content: string }
+  | { type: 'assistant_token'; sessionId: number; turn: number; token: string }
   | { type: 'ask_user'; sessionId: number; question: string };

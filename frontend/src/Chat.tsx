@@ -9,6 +9,7 @@ export default function Chat({ events }: { events: WsEvent[] }) {
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const [awaiting, setAwaiting] = useState(false);
+  const [streaming, setStreaming] = useState(''); // live token-stream text for the in-flight turn
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Bootstrap: load sessions; create one if none exist.
@@ -29,33 +30,38 @@ export default function Chat({ events }: { events: WsEvent[] }) {
   useEffect(() => {
     if (active == null) return;
     api.messages(active).then(setMessages);
+    setStreaming('');
   }, [active]);
 
-  // React to WS ask_user / assistant_message events for the active session.
+  // React to WS events for the active session.
   useEffect(() => {
     if (active == null) return;
     const last = events[events.length - 1];
-    if (!last) return;
-    if (
-      (last.type === 'ask_user' || last.type === 'assistant_message') &&
-      last.sessionId === active
-    ) {
+    if (!last || (('sessionId' in last) && last.sessionId !== active)) return;
+    if (last.type === 'assistant_token') {
+      setStreaming((s) => s + last.token);
+    } else if (last.type === 'assistant_message') {
+      setStreaming('');
       api.messages(active).then(setMessages);
-      if (last.type === 'ask_user') setAwaiting(true);
-      if (last.type === 'assistant_message') setAwaiting(false);
+      setAwaiting(false);
+    } else if (last.type === 'ask_user') {
+      setStreaming('');
+      api.messages(active).then(setMessages);
+      setAwaiting(true);
     }
   }, [events, active]);
 
   // Auto-scroll on new messages.
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
-  }, [messages]);
+  }, [messages, streaming]);
 
-  async function onSend() {
-    if (!input.trim() || active == null || busy) return;
-    const text = input;
+  async function onSend(text: string = input) {
+    const t = text.trim();
+    if (!t || active == null || busy) return;
     setInput('');
     setBusy(true);
+    setStreaming('');
     try {
       // Optimistically append the user message.
       setMessages((m) => [
@@ -64,14 +70,15 @@ export default function Chat({ events }: { events: WsEvent[] }) {
           id: -Date.now(),
           sessionId: active,
           role: 'user',
-          content: text,
+          content: t,
           toolName: null,
           toolCallsJson: null,
           createdAt: new Date().toISOString(),
         },
       ]);
-      const r = await api.send(active, text);
+      const r = await api.send(active, t);
       setAwaiting(r.awaitingUser);
+      setStreaming('');
       setMessages(await api.messages(active));
     } catch (e) {
       alert(`send failed: ${e}`);
@@ -86,11 +93,52 @@ export default function Chat({ events }: { events: WsEvent[] }) {
     setActive(s.id);
     setMessages([]);
     setAwaiting(false);
+    setStreaming('');
   }
 
+  // ─── voice ────────────────────────────────────────────────────────────
+  const [voiceOut, setVoiceOut] = useState(false);
+  const [listening, setListening] = useState(false);
+  const recRef = useRef<any>(null);
+
+  function toggleMic() {
+    if (listening) {
+      recRef.current?.stop();
+      return;
+    }
+    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SR) {
+      alert('Speech recognition not supported in this browser. Try Chrome.');
+      return;
+    }
+    const r = new SR();
+    r.lang = 'en-US';
+    r.interimResults = false;
+    r.maxAlternatives = 1;
+    r.onresult = (e: any) => {
+      const text = e.results[0][0].transcript;
+      setListening(false);
+      onSend(text);
+    };
+    r.onerror = (e: any) => { console.warn('mic error', e); setListening(false); };
+    r.onend = () => setListening(false);
+    recRef.current = r;
+    setListening(true);
+    r.start();
+  }
+
+  // Speak assistant replies if voiceOut is on.
+  useEffect(() => {
+    if (!voiceOut) return;
+    const last = events[events.length - 1];
+    if (!last || !('sessionId' in last) || last.sessionId !== active) return;
+    if (last.type === 'assistant_message' && last.content) speak(last.content);
+    else if (last.type === 'ask_user' && last.question) speak(last.question);
+  }, [events, voiceOut, active]);
+
   return (
-    <div style={{ display: 'flex', gap: 16, height: '70vh' }}>
-      <aside style={{ width: 180, borderRight: '1px solid #ddd', paddingRight: 12 }}>
+    <div style={{ display: 'flex', gap: 16, height: '70vh', flexWrap: 'wrap' }}>
+      <aside style={{ width: 180, borderRight: '1px solid #ddd', paddingRight: 12, minWidth: 0 }}>
         <button onClick={newSession} style={{ width: '100%', marginBottom: 8 }}>
           + New chat
         </button>
@@ -114,7 +162,7 @@ export default function Chat({ events }: { events: WsEvent[] }) {
           ))}
         </ul>
       </aside>
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+      <div style={{ flex: 1, minWidth: 280, display: 'flex', flexDirection: 'column' }}>
         <div
           ref={scrollRef}
           style={{
@@ -146,9 +194,32 @@ export default function Chat({ events }: { events: WsEvent[] }) {
                 </div>
               </div>
             ))}
-          {busy && <div style={{ color: '#888' }}>thinking…</div>}
+          {streaming && (
+            <div style={{ marginBottom: 12, opacity: 0.85 }}>
+              <div style={{ fontSize: 11, color: '#888' }}>assistant · streaming</div>
+              <div style={{ whiteSpace: 'pre-wrap' }}>
+                {streaming}
+                <span className="caret">▍</span>
+              </div>
+            </div>
+          )}
+          {busy && !streaming && <div style={{ color: '#888' }}>thinking…</div>}
         </div>
-        <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+        <div style={{ display: 'flex', gap: 8, marginTop: 8, alignItems: 'center' }}>
+          <button
+            onClick={toggleMic}
+            title="Push-to-talk (browser SpeechRecognition; uses cloud STT in Chrome)"
+            style={{
+              padding: '8px 12px',
+              background: listening ? '#c33' : '#eee',
+              color: listening ? '#fff' : '#333',
+              border: 'none',
+              borderRadius: 4,
+              cursor: 'pointer',
+            }}
+          >
+            {listening ? '● rec' : '🎤'}
+          </button>
           <input
             type="text"
             value={input}
@@ -156,13 +227,30 @@ export default function Chat({ events }: { events: WsEvent[] }) {
             onKeyDown={(e) => e.key === 'Enter' && onSend()}
             placeholder={awaiting ? 'Answer the question above…' : 'Ask about your home…'}
             disabled={busy}
-            style={{ flex: 1, padding: 8, fontSize: 14 }}
+            style={{ flex: 1, padding: 8, fontSize: 14, minWidth: 0 }}
           />
-          <button onClick={onSend} disabled={busy || !input.trim()}>
+          <button onClick={() => onSend()} disabled={busy || !input.trim()}>
             Send
           </button>
+          <label style={{ fontSize: 12, color: '#666', display: 'flex', alignItems: 'center', gap: 4 }}>
+            <input
+              type="checkbox"
+              checked={voiceOut}
+              onChange={(e) => setVoiceOut(e.target.checked)}
+            />
+            🔊
+          </label>
         </div>
       </div>
     </div>
   );
+}
+
+function speak(text: string) {
+  if (!('speechSynthesis' in window)) return;
+  // Cancel anything in flight so consecutive replies don't queue up.
+  window.speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(text);
+  u.rate = 1.05;
+  window.speechSynthesis.speak(u);
 }
