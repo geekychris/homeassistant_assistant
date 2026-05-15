@@ -4,8 +4,9 @@ import type { Area, HaEntity, WsEvent } from './types';
 import Catalog from './Catalog';
 import Chat from './Chat';
 import Automations from './Automations';
+import Settings from './Settings';
 
-type Tab = 'areas' | 'chat' | 'automations';
+type Tab = 'areas' | 'chat' | 'automations' | 'settings';
 
 export default function App() {
   const [tab, setTab] = useState<Tab>('areas');
@@ -68,7 +69,7 @@ export default function App() {
       >
         <h1 style={{ margin: 0, fontSize: 'clamp(18px, 5vw, 24px)' }}>HA Assistant</h1>
         <nav style={{ display: 'flex', gap: 4, flex: 1, minWidth: 0 }}>
-          {(['areas', 'chat', 'automations'] as const).map((t) => (
+          {(['areas', 'chat', 'automations', 'settings'] as const).map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
@@ -91,6 +92,7 @@ export default function App() {
       {tab === 'areas' && <Catalog areas={areas} entities={entities} />}
       {tab === 'chat' && <Chat events={events} />}
       {tab === 'automations' && <Automations />}
+      {tab === 'settings' && <Settings />}
     </main>
   );
 }

@@ -1,8 +1,10 @@
 package com.hitorro.haassistant.db;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+
 import java.util.List;
 
 public interface ScheduleRepository extends JpaRepository<Schedule, Long> {
     List<Schedule> findByEnabledTrue();
+    List<Schedule> findByInstanceId(Long instanceId);
 }

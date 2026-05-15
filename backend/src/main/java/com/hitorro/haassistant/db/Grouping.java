@@ -15,6 +15,9 @@ public class Grouping {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @Column(name = "instance_id", nullable = false)
+    private Long instanceId;
+
     @Column(nullable = false, unique = true)
     private String name;
 
@@ -29,12 +32,15 @@ public class Grouping {
 
     protected Grouping() {}
 
-    public Grouping(String name, String description) {
+    public Grouping(Long instanceId, String name, String description) {
+        this.instanceId = instanceId;
         this.name = name;
         this.description = description;
     }
 
     public Long getId() { return id; }
+    public Long getInstanceId() { return instanceId; }
+    public void setInstanceId(Long instanceId) { this.instanceId = instanceId; }
     public String getName() { return name; }
     public String getDescription() { return description; }
     public Instant getCreatedAt() { return createdAt; }

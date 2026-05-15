@@ -4,13 +4,14 @@ import jakarta.persistence.*;
 
 import java.time.Instant;
 
-/**
- * User/assistant-curated knowledge about an entity. Persists across HA syncs
- * (unlike {@link HaEntity} columns which mirror HA and may be overwritten).
- */
 @Entity
 @Table(name = "entity_note")
+@IdClass(EntityNoteId.class)
 public class EntityNote {
+
+    @Id
+    @Column(name = "instance_id", nullable = false)
+    private Long instanceId;
 
     @Id
     @Column(name = "entity_id")
@@ -26,8 +27,12 @@ public class EntityNote {
 
     protected EntityNote() {}
 
-    public EntityNote(String entityId) { this.entityId = entityId; }
+    public EntityNote(Long instanceId, String entityId) {
+        this.instanceId = instanceId;
+        this.entityId = entityId;
+    }
 
+    public Long getInstanceId() { return instanceId; }
     public String getEntityId() { return entityId; }
     public String getLabel() { return label; }
     public String getNote() { return note; }

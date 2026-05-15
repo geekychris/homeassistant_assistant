@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { api } from './api';
 import type { ChatMessageRow, ConversationSession, WsEvent } from './types';
+import ToolMessage from './ToolMessage';
 
 export default function Chat({ events }: { events: WsEvent[] }) {
   const [sessions, setSessions] = useState<ConversationSession[]>([]);
@@ -175,25 +176,18 @@ export default function Chat({ events }: { events: WsEvent[] }) {
           }}
         >
           {messages
-            .filter((m) => m.role !== 'tool' || (m.content && m.content.length < 400))
-            .map((m) => (
-              <div key={m.id} style={{ marginBottom: 12 }}>
-                <div style={{ fontSize: 11, color: '#888' }}>
-                  {m.role}
-                  {m.toolName ? ` · ${m.toolName}` : ''}
+            .filter((m) => !(m.role === 'assistant' && (!m.content || !m.content.trim())))
+            .map((m) => {
+              if (m.role === 'tool') {
+                return <ToolMessage key={m.id} toolName={m.toolName} rawJson={m.content} />;
+              }
+              return (
+                <div key={m.id} style={{ marginBottom: 12 }}>
+                  <div style={{ fontSize: 11, color: '#888' }}>{m.role}</div>
+                  <div style={{ whiteSpace: 'pre-wrap', fontSize: 14 }}>{m.content}</div>
                 </div>
-                <div
-                  style={{
-                    whiteSpace: 'pre-wrap',
-                    fontFamily: m.role === 'tool' ? 'ui-monospace, monospace' : 'inherit',
-                    color: m.role === 'tool' ? '#666' : 'inherit',
-                    fontSize: m.role === 'tool' ? 12 : 14,
-                  }}
-                >
-                  {m.content}
-                </div>
-              </div>
-            ))}
+              );
+            })}
           {streaming && (
             <div style={{ marginBottom: 12, opacity: 0.85 }}>
               <div style={{ fontSize: 11, color: '#888' }}>assistant · streaming</div>

@@ -3,6 +3,7 @@ package com.hitorro.haassistant.grouping;
 import com.hitorro.haassistant.db.Grouping;
 import com.hitorro.haassistant.db.GroupingAction;
 import com.hitorro.haassistant.db.GroupingRepository;
+import com.hitorro.haassistant.ha.HaConnectionManager;
 import com.hitorro.haassistant.ha.HomeAssistantClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -23,11 +24,11 @@ public class GroupingRunner {
     private static final Logger log = LoggerFactory.getLogger(GroupingRunner.class);
 
     private final GroupingRepository groupings;
-    private final HomeAssistantClient ha;
+    private final HaConnectionManager conns;
 
-    public GroupingRunner(GroupingRepository groupings, HomeAssistantClient ha) {
+    public GroupingRunner(GroupingRepository groupings, HaConnectionManager conns) {
         this.groupings = groupings;
-        this.ha = ha;
+        this.conns = conns;
     }
 
     @Transactional(readOnly = true)
@@ -46,10 +47,15 @@ public class GroupingRunner {
 
     private RunReport runActions(Grouping g) {
         int fired = 0, failed = 0;
+        HomeAssistantClient client = conns.get(g.getInstanceId()).orElse(null);
+        if (client == null) {
+            log.warn("Grouping {} target instance {} has no live client", g.getId(), g.getInstanceId());
+            return new RunReport(g.getId(), g.getName(), 0, g.getActions().size());
+        }
         List<GroupingAction> actions = g.getActions();
         for (GroupingAction a : actions) {
             try {
-                ha.callService(a.getDomain(), a.getService(), List.of(a.getEntityId()), a.getServiceData());
+                client.callService(a.getDomain(), a.getService(), List.of(a.getEntityId()), a.getServiceData());
                 fired++;
             } catch (Exception e) {
                 failed++;

@@ -1,5 +1,7 @@
 package com.hitorro.haassistant.api;
 
+import com.hitorro.haassistant.db.HaInstance;
+import com.hitorro.haassistant.db.HaInstanceRepository;
 import com.hitorro.haassistant.db.Schedule;
 import com.hitorro.haassistant.db.ScheduleRepository;
 import jakarta.validation.constraints.NotBlank;
@@ -8,15 +10,18 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 import java.util.Map;
+import java.util.NoSuchElementException;
 
 @RestController
 @RequestMapping("/api/schedules")
 public class ScheduleController {
 
     private final ScheduleRepository repo;
+    private final HaInstanceRepository instances;
 
-    public ScheduleController(ScheduleRepository repo) {
+    public ScheduleController(ScheduleRepository repo, HaInstanceRepository instances) {
         this.repo = repo;
+        this.instances = instances;
     }
 
     public record CreateRequest(
@@ -24,6 +29,7 @@ public class ScheduleController {
             @NotBlank String cronExpr,
             @NotBlank String domain,
             @NotBlank String service,
+            String instance,
             List<String> entityIds,
             Map<String, Object> serviceData) {}
 
@@ -32,8 +38,9 @@ public class ScheduleController {
 
     @PostMapping
     public Schedule create(@RequestBody CreateRequest req) {
+        Long instanceId = resolveInstanceId(req.instance());
         return repo.save(new Schedule(
-                req.name(), req.cronExpr(), req.domain(), req.service(),
+                instanceId, req.name(), req.cronExpr(), req.domain(), req.service(),
                 req.entityIds(), req.serviceData()));
     }
 
@@ -49,5 +56,14 @@ public class ScheduleController {
         if (!repo.existsById(id)) return ResponseEntity.notFound().build();
         repo.deleteById(id);
         return ResponseEntity.noContent().build();
+    }
+
+    private Long resolveInstanceId(String name) {
+        HaInstance i = (name == null || name.isBlank())
+                ? instances.findFirstByIsDefaultTrue()
+                        .orElseThrow(() -> new NoSuchElementException("no default instance"))
+                : instances.findByName(name)
+                        .orElseThrow(() -> new NoSuchElementException("instance " + name));
+        return i.getId();
     }
 }

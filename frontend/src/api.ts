@@ -1,5 +1,5 @@
 import type {
-  Area, ChatMessageRow, ConversationSession, Grouping, HaEntity, Schedule,
+  Area, ChatMessageRow, ConversationSession, Grouping, HaEntity, Instance, Schedule,
 } from './types';
 
 async function get<T>(url: string): Promise<T> {
@@ -20,8 +20,17 @@ async function send<T>(method: string, url: string, body?: unknown): Promise<T> 
 }
 
 export const api = {
-  areas: () => get<Area[]>('/api/areas'),
-  entities: () => get<HaEntity[]>('/api/entities'),
+  instances: () => get<Instance[]>('/api/instances'),
+  createInstance: (req: Partial<Instance> & { token?: string }) =>
+    send<Instance>('POST', '/api/instances', req),
+  updateInstance: (id: number, req: Partial<Instance> & { token?: string }) =>
+    send<Instance>('PUT', `/api/instances/${id}`, req),
+  deleteInstance: (id: number) => send<void>('DELETE', `/api/instances/${id}`),
+
+  areas: (instance?: string) =>
+    get<Area[]>(`/api/areas${instance ? `?instance=${encodeURIComponent(instance)}` : ''}`),
+  entities: (instance?: string) =>
+    get<HaEntity[]>(`/api/entities${instance ? `?instance=${encodeURIComponent(instance)}` : ''}`),
 
   schedules: () => get<Schedule[]>('/api/schedules'),
   createSchedule: (s: Partial<Schedule>) => send<Schedule>('POST', '/api/schedules', s),

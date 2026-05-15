@@ -2,6 +2,7 @@ package com.hitorro.haassistant.schedule;
 
 import com.hitorro.haassistant.db.Schedule;
 import com.hitorro.haassistant.db.ScheduleRepository;
+import com.hitorro.haassistant.ha.HaConnectionManager;
 import com.hitorro.haassistant.ha.HomeAssistantClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -27,19 +28,19 @@ public class ScheduleExecutor {
     private static final Logger log = LoggerFactory.getLogger(ScheduleExecutor.class);
 
     private final ScheduleRepository schedules;
-    private final HomeAssistantClient ha;
+    private final HaConnectionManager conns;
     private final Clock clock;
     private final ZoneId zone;
 
     @Autowired
-    public ScheduleExecutor(ScheduleRepository schedules, HomeAssistantClient ha) {
-        this(schedules, ha, Clock.systemDefaultZone(), ZoneId.systemDefault());
+    public ScheduleExecutor(ScheduleRepository schedules, HaConnectionManager conns) {
+        this(schedules, conns, Clock.systemDefaultZone(), ZoneId.systemDefault());
     }
 
     /** Visible for testing. */
-    public ScheduleExecutor(ScheduleRepository schedules, HomeAssistantClient ha, Clock clock, ZoneId zone) {
+    public ScheduleExecutor(ScheduleRepository schedules, HaConnectionManager conns, Clock clock, ZoneId zone) {
         this.schedules = schedules;
-        this.ha = ha;
+        this.conns = conns;
         this.clock = clock;
         this.zone = zone;
     }
@@ -85,7 +86,15 @@ public class ScheduleExecutor {
     }
 
     private void fire(Schedule s) {
-        log.info("Firing schedule {} → {}.{} on {}", s.getId(), s.getDomain(), s.getService(), s.getEntityIds());
-        ha.callService(s.getDomain(), s.getService(), s.getEntityIds(), s.getServiceData());
+        HomeAssistantClient client = conns.get(s.getInstanceId()).orElse(null);
+        if (client == null) {
+            log.warn("Schedule {} target instance {} has no live client — skipping",
+                    s.getId(), s.getInstanceId());
+            return;
+        }
+        log.info("Firing schedule {} → {}.{} on {} (instance {})",
+                s.getId(), s.getDomain(), s.getService(), s.getEntityIds(),
+                client.getInstance().getName());
+        client.callService(s.getDomain(), s.getService(), s.getEntityIds(), s.getServiceData());
     }
 }

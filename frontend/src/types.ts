@@ -38,6 +38,17 @@ export type Grouping = {
 
 export type ConversationSession = { id: number; title: string | null };
 
+export type Instance = {
+  id: number;
+  name: string;
+  internalUrl: string | null;
+  externalUrl: string | null;
+  enabled: boolean;
+  isDefault: boolean;
+  tokenSet: boolean;
+  status: string; // "connected" | "connecting" | "not started" | "disabled"
+};
+
 export type ChatMessageRow = {
   id: number;
   sessionId: number;

@@ -7,6 +7,8 @@ import com.hitorro.haassistant.db.ChatMessage;
 import com.hitorro.haassistant.db.ChatMessageRepository;
 import com.hitorro.haassistant.db.ConversationSession;
 import com.hitorro.haassistant.db.ConversationSessionRepository;
+import com.hitorro.haassistant.db.HaInstance;
+import com.hitorro.haassistant.db.HaInstanceRepository;
 import com.hitorro.haassistant.ollama.OllamaClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -44,18 +46,21 @@ public class ConversationService {
     private final ToolRegistry tools;
     private final OllamaClient ollama;
     private final UiBroadcaster ui;
+    private final HaInstanceRepository instances;
     private final ObjectMapper mapper = new ObjectMapper();
 
     public ConversationService(ConversationSessionRepository sessions,
                                ChatMessageRepository messages,
                                ToolRegistry tools,
                                OllamaClient ollama,
-                               UiBroadcaster ui) {
+                               UiBroadcaster ui,
+                               HaInstanceRepository instances) {
         this.sessions = sessions;
         this.messages = messages;
         this.tools = tools;
         this.ollama = ollama;
         this.ui = ui;
+        this.instances = instances;
     }
 
     @Transactional
@@ -178,6 +183,18 @@ public class ConversationService {
     }
 
     private String systemPrompt() {
+        String instancesLine = "";
+        try {
+            List<HaInstance> all = instances.findAll();
+            if (!all.isEmpty()) {
+                String defName = all.stream().filter(HaInstance::isDefault)
+                        .findFirst().map(HaInstance::getName).orElse(all.get(0).getName());
+                String names = all.stream().map(HaInstance::getName).reduce((a, b) -> a + ", " + b).orElse("");
+                instancesLine = "\n\nConfigured HA instances: " + names + ". Default: " + defName +
+                        ". Most tools accept an optional 'instance' arg; omit it to act on the default.";
+            }
+        } catch (Exception ignored) {}
+
         return """
             You are a helpful home automation assistant for the user's Home Assistant install.
 
@@ -218,6 +235,6 @@ public class ConversationService {
             Learn as you go: if the user says "this is the X" or you confirm what a
             device controls (e.g. via call_ha_service feedback), call set_entity_label
             or set_entity_note so the next conversation starts smarter.
-            """;
+            """ + instancesLine;
     }
 }

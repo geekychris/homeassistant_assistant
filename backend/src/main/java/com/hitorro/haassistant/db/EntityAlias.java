@@ -10,6 +10,9 @@ public class EntityAlias {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @Column(name = "instance_id", nullable = false)
+    private Long instanceId;
+
     @Column(nullable = false)
     private String alias;
 
@@ -21,13 +24,15 @@ public class EntityAlias {
 
     protected EntityAlias() {}
 
-    public EntityAlias(String alias, String entityId, String source) {
+    public EntityAlias(Long instanceId, String alias, String entityId, String source) {
+        this.instanceId = instanceId;
         this.alias = alias;
         this.entityId = entityId;
         this.source = source;
     }
 
     public Long getId() { return id; }
+    public Long getInstanceId() { return instanceId; }
     public String getAlias() { return alias; }
     public String getEntityId() { return entityId; }
     public String getSource() { return source; }

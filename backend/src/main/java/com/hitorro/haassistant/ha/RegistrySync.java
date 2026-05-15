@@ -7,8 +7,6 @@ import com.hitorro.haassistant.db.HaEntity;
 import com.hitorro.haassistant.db.HaEntityRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.boot.context.event.ApplicationReadyEvent;
-import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -17,54 +15,56 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * On startup, pull HA's area + entity registries and current states; cache them in H2.
- * Runs after the WebSocket connect+auth completes.
+ * Pulls HA's area + entity registries and current states into the local DB.
+ * Runs once per instance whenever its WebSocket authenticates (via the
+ * onAuth callback installed by HaConnectionManager).
  */
 @Component
-public class RegistrySync {
+public class RegistrySync implements HaConnectionManager.ClientLifecycleListener {
 
     private static final Logger log = LoggerFactory.getLogger(RegistrySync.class);
 
-    private final HomeAssistantClient ha;
     private final AreaRepository areas;
     private final HaEntityRepository entities;
 
-    public RegistrySync(HomeAssistantClient ha, AreaRepository areas, HaEntityRepository entities) {
-        this.ha = ha;
+    public RegistrySync(AreaRepository areas, HaEntityRepository entities) {
         this.areas = areas;
         this.entities = entities;
     }
 
-    @EventListener(ApplicationReadyEvent.class)
-    public void bootstrap() {
-        // Areas first, then entities (entity rows reference area_id; we want areas committed first).
-        ha.send("config/area_registry/list", null)
-                .thenAccept(this::syncAreas)
-                .thenCompose(v -> ha.send("config/entity_registry/list", null)
-                        .thenCombine(ha.send("get_states", null), (registry, states) -> {
-                            syncEntities(registry, states);
+    @Override
+    public void onClientReady(HomeAssistantClient client) {
+        Long instanceId = client.getInstance().getId();
+        client.send("config/area_registry/list", null)
+                .thenAccept(result -> syncAreas(instanceId, result))
+                .thenCompose(v -> client.send("config/entity_registry/list", null)
+                        .thenCombine(client.send("get_states", null), (registry, states) -> {
+                            syncEntities(instanceId, registry, states);
                             return null;
                         }))
-                .exceptionally(err -> { log.warn("HA registry sync failed", err); return null; });
+                .exceptionally(err -> {
+                    log.warn("[{}] HA registry sync failed", client.getInstance().getName(), err);
+                    return null;
+                });
     }
 
     @Transactional
-    void syncAreas(JsonNode result) {
+    void syncAreas(Long instanceId, JsonNode result) {
         int count = 0;
         for (JsonNode a : result) {
             String id = a.path("area_id").asText();
             String name = a.path("name").asText();
-            Area existing = areas.findById(id).orElse(new Area(id, name));
+            Area existing = areas.findByInstanceIdAndId(instanceId, id).orElse(new Area(instanceId, id, name));
             existing.setName(name);
             existing.touch();
             areas.save(existing);
             count++;
         }
-        log.info("Synced {} areas", count);
+        log.info("[{}] synced {} areas", instanceId, count);
     }
 
     @Transactional
-    void syncEntities(JsonNode registry, JsonNode states) {
+    void syncEntities(Long instanceId, JsonNode registry, JsonNode states) {
         Map<String, JsonNode> stateByEntityId = new HashMap<>();
         for (JsonNode s : states) {
             stateByEntityId.put(s.path("entity_id").asText(), s);
@@ -75,7 +75,7 @@ public class RegistrySync {
             String entityId = e.path("entity_id").asText();
             String domain = entityId.contains(".") ? entityId.substring(0, entityId.indexOf('.')) : "unknown";
 
-            HaEntity ent = entities.findById(entityId).orElse(new HaEntity(entityId, domain));
+            HaEntity ent = entities.findByInstanceIdAndEntityId(instanceId,  entityId).orElse(new HaEntity(instanceId, entityId, domain));
             ent.setName(textOrNull(e, "name"));
             ent.setAreaId(textOrNull(e, "area_id"));
             ent.setDeviceId(textOrNull(e, "device_id"));
@@ -96,7 +96,7 @@ public class RegistrySync {
             entities.save(ent);
             count++;
         }
-        log.info("Synced {} entities", count);
+        log.info("[{}] synced {} entities", instanceId, count);
     }
 
     private static String textOrNull(JsonNode n, String field) {

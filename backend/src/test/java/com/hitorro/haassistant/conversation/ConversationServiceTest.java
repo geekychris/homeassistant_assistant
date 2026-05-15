@@ -7,6 +7,7 @@ import com.hitorro.haassistant.db.ChatMessage;
 import com.hitorro.haassistant.db.ChatMessageRepository;
 import com.hitorro.haassistant.db.ConversationSession;
 import com.hitorro.haassistant.db.ConversationSessionRepository;
+import com.hitorro.haassistant.db.HaInstanceRepository;
 import com.hitorro.haassistant.ollama.OllamaClient;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -29,7 +30,12 @@ class ConversationServiceTest {
     private final ChatMessageRepository messages = mock(ChatMessageRepository.class);
     private final OllamaClient ollama = mock(OllamaClient.class);
     private final UiBroadcaster ui = mock(UiBroadcaster.class);
+    private final HaInstanceRepository instances = mock(HaInstanceRepository.class);
     private final ObjectMapper mapper = new ObjectMapper();
+
+    private ConversationService make(ToolRegistry registry) {
+        return new ConversationService(sessions, messages, registry, ollama, ui, instances);
+    }
 
     private final List<ChatMessage> savedMessages = new ArrayList<>();
 
@@ -62,7 +68,7 @@ class ConversationServiceTest {
     @Test
     void plain_response_persists_and_returns_text() throws Exception {
         ToolRegistry registry = new ToolRegistry(List.of());
-        ConversationService svc = new ConversationService(sessions, messages, registry, ollama, ui);
+        ConversationService svc = make(registry);
 
         when(ollama.chatStream(any(), any(), any())).thenReturn(mapper.readTree("""
                 { "message": { "role": "assistant", "content": "Hello!" } }
@@ -83,7 +89,7 @@ class ConversationServiceTest {
     void tool_call_then_final_text() throws Exception {
         Tool myTool = fixedTool("list_areas", ToolResult.ok(List.of(Map.of("id", "bedroom"))));
         ToolRegistry registry = new ToolRegistry(List.of(myTool));
-        ConversationService svc = new ConversationService(sessions, messages, registry, ollama, ui);
+        ConversationService svc = make(registry);
 
         when(ollama.chatStream(any(), any(), any()))
                 .thenReturn(mapper.readTree("""
@@ -109,7 +115,7 @@ class ConversationServiceTest {
     void ask_user_halts_loop_and_broadcasts_question() throws Exception {
         Tool ask = fixedTool("ask_user", ToolResult.askUser("Which lights?"));
         ToolRegistry registry = new ToolRegistry(List.of(ask));
-        ConversationService svc = new ConversationService(sessions, messages, registry, ollama, ui);
+        ConversationService svc = make(registry);
 
         when(ollama.chatStream(any(), any(), any()))
                 .thenReturn(mapper.readTree("""
@@ -141,7 +147,7 @@ class ConversationServiceTest {
     @Test
     void system_prompt_steers_against_unnecessary_ask_user() throws Exception {
         ToolRegistry registry = new ToolRegistry(List.of());
-        ConversationService svc = new ConversationService(sessions, messages, registry, ollama, ui);
+        ConversationService svc = make(registry);
 
         org.mockito.ArgumentCaptor<List<Map<String, Object>>> captor =
                 org.mockito.ArgumentCaptor.forClass(List.class);
@@ -164,7 +170,7 @@ class ConversationServiceTest {
     @Test
     void unknown_tool_name_returns_error_to_model_but_does_not_throw() throws Exception {
         ToolRegistry registry = new ToolRegistry(List.of());
-        ConversationService svc = new ConversationService(sessions, messages, registry, ollama, ui);
+        ConversationService svc = make(registry);
 
         when(ollama.chatStream(any(), any(), any()))
                 .thenReturn(mapper.readTree("""

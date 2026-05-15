@@ -13,6 +13,9 @@ public class Schedule {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @Column(name = "instance_id", nullable = false)
+    private Long instanceId;
+
     @Column(nullable = false)
     private String name;
 
@@ -46,8 +49,9 @@ public class Schedule {
 
     protected Schedule() {}
 
-    public Schedule(String name, String cronExpr, String domain, String service,
+    public Schedule(Long instanceId, String name, String cronExpr, String domain, String service,
                     List<String> entityIds, Map<String, Object> serviceData) {
+        this.instanceId = instanceId;
         this.name = name;
         this.cronExpr = cronExpr;
         this.domain = domain;
@@ -57,6 +61,8 @@ public class Schedule {
     }
 
     public Long getId() { return id; }
+    public Long getInstanceId() { return instanceId; }
+    public void setInstanceId(Long instanceId) { this.instanceId = instanceId; }
     public String getName() { return name; }
     public String getCronExpr() { return cronExpr; }
     public boolean isEnabled() { return enabled; }

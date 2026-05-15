@@ -1,10 +1,11 @@
 package com.hitorro.haassistant.conversation.tools;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.core.type.TypeReference;
 import com.hitorro.haassistant.conversation.Tool;
 import com.hitorro.haassistant.conversation.ToolResult;
+import com.hitorro.haassistant.ha.HaConnectionManager;
 import com.hitorro.haassistant.ha.HomeAssistantClient;
 import org.springframework.stereotype.Component;
 
@@ -16,29 +17,33 @@ import java.util.concurrent.TimeUnit;
 @Component
 public class CallHaServiceTool implements Tool {
 
-    private final HomeAssistantClient ha;
+    private final HaConnectionManager conns;
+    private final InstanceResolver resolver;
     private final ObjectMapper mapper = new ObjectMapper();
 
-    public CallHaServiceTool(HomeAssistantClient ha) { this.ha = ha; }
+    public CallHaServiceTool(HaConnectionManager conns, InstanceResolver resolver) {
+        this.conns = conns;
+        this.resolver = resolver;
+    }
 
     @Override public String name() { return "call_ha_service"; }
 
     @Override public String description() {
         return "Call a Home Assistant service. Examples: light.turn_on, switch.turn_off, " +
                "media_player.volume_set. entity_ids targets which entities the action applies to. " +
-               "service_data is an object of extra parameters (e.g. {\"brightness\": 200}).";
+               "service_data is an object of extra parameters (e.g. {\"brightness\": 200}). " +
+               "If the user has more than one HA instance, pass 'instance' to pick (default otherwise).";
     }
 
     @Override public Map<String, Object> parameterSchema() {
         return Map.of(
                 "type", "object",
                 "properties", Map.of(
+                        "instance", Map.of("type", "string"),
                         "domain", Map.of("type", "string", "description", "e.g. light, switch, media_player"),
                         "service", Map.of("type", "string", "description", "e.g. turn_on, turn_off, toggle"),
-                        "entity_ids", Map.of("type", "array", "items", Map.of("type", "string"),
-                                "description", "List of entity_ids to target."),
-                        "service_data", Map.of("type", "object",
-                                "description", "Optional extra parameters for the service (e.g. brightness, color).")),
+                        "entity_ids", Map.of("type", "array", "items", Map.of("type", "string")),
+                        "service_data", Map.of("type", "object")),
                 "required", List.of("domain", "service"));
     }
 
@@ -61,8 +66,13 @@ public class CallHaServiceTool implements Tool {
         }
 
         try {
-            ha.callService(domain, service, entityIds, serviceData).get(15, TimeUnit.SECONDS);
-            return ToolResult.ok(Map.of("called", domain + "." + service, "entity_ids", entityIds));
+            HomeAssistantClient client = conns.get(resolver.resolve(args).getId())
+                    .orElseThrow(() -> new RuntimeException("instance not connected"));
+            client.callService(domain, service, entityIds, serviceData).get(15, TimeUnit.SECONDS);
+            return ToolResult.ok(Map.of(
+                    "instance", client.getInstance().getName(),
+                    "called", domain + "." + service,
+                    "entity_ids", entityIds));
         } catch (Exception e) {
             return ToolResult.error("HA call failed: " + e.getMessage());
         }

@@ -49,19 +49,21 @@ public class ScheduleTools {
     }
 
     @Bean
-    public Tool createScheduleTool(ScheduleRepository repo) {
+    public Tool createScheduleTool(ScheduleRepository repo, InstanceResolver resolver) {
         return new Tool() {
             @Override public String name() { return "create_schedule"; }
             @Override public String description() {
                 return "Create a recurring schedule. Cron uses Spring's 6-field format " +
                        "(seconds minutes hours day month day-of-week). " +
                        "Example: '0 0 23 * * *' fires every day at 23:00. " +
-                       "On fire, calls the given HA domain.service on the given entity_ids.";
+                       "On fire, calls the given HA domain.service on the given entity_ids " +
+                       "of the given instance (default if omitted).";
             }
             @Override public Map<String, Object> parameterSchema() {
                 return Map.of(
                         "type", "object",
                         "properties", Map.of(
+                                "instance", Map.of("type", "string"),
                                 "name", Map.of("type", "string"),
                                 "cron_expr", Map.of("type", "string"),
                                 "domain", Map.of("type", "string"),
@@ -72,6 +74,7 @@ public class ScheduleTools {
             }
             @Override public ToolResult execute(JsonNode args) {
                 try {
+                    Long instanceId = resolver.resolve(args).getId();
                     String name = args.get("name").asText();
                     String cron = args.get("cron_expr").asText();
                     String domain = args.get("domain").asText();
@@ -82,7 +85,7 @@ public class ScheduleTools {
                     Map<String, Object> data = null;
                     JsonNode d = args.get("service_data");
                     if (d != null && d.isObject()) data = MAPPER.convertValue(d, new TypeReference<>() {});
-                    Schedule s = repo.save(new Schedule(name, cron, domain, service, ids, data));
+                    Schedule s = repo.save(new Schedule(instanceId, name, cron, domain, service, ids, data));
                     return ToolResult.ok(Map.of("id", s.getId(), "name", s.getName()));
                 } catch (Exception e) {
                     return ToolResult.error("create_schedule failed: " + e.getMessage());

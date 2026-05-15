@@ -1,15 +1,17 @@
 package com.hitorro.haassistant.db;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.Id;
-import jakarta.persistence.Lob;
-import jakarta.persistence.Table;
+import jakarta.persistence.*;
+
 import java.time.Instant;
 
 @Entity
 @Table(name = "ha_entity")
+@IdClass(HaEntityId.class)
 public class HaEntity {
+
+    @Id
+    @Column(name = "instance_id", nullable = false)
+    private Long instanceId;
 
     @Id
     @Column(name = "entity_id")
@@ -49,11 +51,13 @@ public class HaEntity {
 
     protected HaEntity() {}
 
-    public HaEntity(String entityId, String domain) {
+    public HaEntity(Long instanceId, String entityId, String domain) {
+        this.instanceId = instanceId;
         this.entityId = entityId;
         this.domain = domain;
     }
 
+    public Long getInstanceId() { return instanceId; }
     public String getEntityId() { return entityId; }
     public String getDomain() { return domain; }
     public String getName() { return name; }

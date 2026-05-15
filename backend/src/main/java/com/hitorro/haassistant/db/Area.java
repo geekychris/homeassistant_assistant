@@ -1,14 +1,16 @@
 package com.hitorro.haassistant.db;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.Id;
-import jakarta.persistence.Table;
+import jakarta.persistence.*;
 import java.time.Instant;
 
 @Entity
 @Table(name = "area")
+@IdClass(AreaId.class)
 public class Area {
+
+    @Id
+    @Column(name = "instance_id", nullable = false)
+    private Long instanceId;
 
     @Id
     private String id;
@@ -21,12 +23,14 @@ public class Area {
 
     protected Area() {}
 
-    public Area(String id, String name) {
+    public Area(Long instanceId, String id, String name) {
+        this.instanceId = instanceId;
         this.id = id;
         this.name = name;
         this.lastSynced = Instant.now();
     }
 
+    public Long getInstanceId() { return instanceId; }
     public String getId() { return id; }
     public String getName() { return name; }
     public Instant getLastSynced() { return lastSynced; }

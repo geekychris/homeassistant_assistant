@@ -77,16 +77,17 @@ public class GroupingTools {
     }
 
     @Bean
-    public Tool createGroupingTool(GroupingRepository repo) {
+    public Tool createGroupingTool(GroupingRepository repo, InstanceResolver resolver) {
         return new Tool() {
             @Override public String name() { return "create_grouping"; }
             @Override public String description() {
-                return "Create a new grouping (scene). Each action is one HA service call.";
+                return "Create a new grouping (scene) for an instance. Each action is one HA service call.";
             }
             @Override public Map<String, Object> parameterSchema() {
                 return Map.of(
                         "type", "object",
                         "properties", Map.of(
+                                "instance", Map.of("type", "string"),
                                 "name", Map.of("type", "string"),
                                 "description", Map.of("type", "string"),
                                 "actions", Map.of(
@@ -103,9 +104,10 @@ public class GroupingTools {
             }
             @Override public ToolResult execute(JsonNode args) {
                 try {
+                    Long instanceId = resolver.resolve(args).getId();
                     String name = args.get("name").asText();
                     String desc = args.hasNonNull("description") ? args.get("description").asText() : null;
-                    Grouping g = new Grouping(name, desc);
+                    Grouping g = new Grouping(instanceId, name, desc);
                     for (JsonNode a : args.get("actions")) {
                         Map<String, Object> data = a.hasNonNull("service_data")
                                 ? MAPPER.convertValue(a.get("service_data"), new TypeReference<>() {})
