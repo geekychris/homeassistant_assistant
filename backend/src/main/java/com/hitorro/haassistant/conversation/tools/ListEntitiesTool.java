@@ -10,11 +10,19 @@ import com.hitorro.haassistant.db.EntityNoteRepository;
 import org.springframework.stereotype.Component;
 
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
 @Component
 public class ListEntitiesTool implements Tool {
+
+    /**
+     * Hard cap on results returned to the model. A typical HA install has 2000+
+     * entities and every byte the model has to read back in subsequent turns
+     * is wall-clock. Beyond this we tell the model to filter and stop.
+     */
+    private static final int MAX_RESULTS = 100;
 
     private final HaEntityRepository entities;
     private final EntityNoteRepository notes;
@@ -97,6 +105,35 @@ public class ListEntitiesTool implements Tool {
                 result = result.stream()
                         .filter(m -> category.equalsIgnoreCase(String.valueOf(m.get("category"))))
                         .toList();
+            }
+            // Cap to avoid blowing up the prompt on subsequent turns.
+            int totalMatched = result.size();
+            if (totalMatched > MAX_RESULTS) {
+                // No filter (or weak filter) → return a SUMMARY by category so
+                // the model can re-call with a useful filter instead of giving
+                // up after seeing 100 of 2000.
+                Map<String, Integer> byCategory = new java.util.TreeMap<>();
+                Map<String, Integer> byDomain = new java.util.TreeMap<>();
+                Map<String, Integer> byArea = new java.util.TreeMap<>();
+                for (Map<String, Object> r : result) {
+                    byCategory.merge(String.valueOf(r.get("category")), 1, Integer::sum);
+                    byDomain.merge(String.valueOf(r.get("domain")), 1, Integer::sum);
+                    Object a = r.get("area_id");
+                    if (a != null) byArea.merge(String.valueOf(a), 1, Integer::sum);
+                }
+                Map<String, Object> envelope = new LinkedHashMap<>();
+                envelope.put("total_matched", totalMatched);
+                envelope.put("returned_sample", MAX_RESULTS);
+                envelope.put("truncated", true);
+                envelope.put("by_category", byCategory);
+                envelope.put("by_domain", byDomain);
+                envelope.put("by_area", byArea);
+                envelope.put("sample", result.subList(0, Math.min(20, MAX_RESULTS)));
+                envelope.put("hint", "Too many results to return in full. Re-call list_entities "
+                        + "with category=<one of the keys in by_category>, or domain=<one of by_domain>, "
+                        + "or area_id=<one of by_area>. To answer 'how many lights are on', filter by "
+                        + "category='light' then count entries where state='on'.");
+                return ToolResult.ok(envelope);
             }
             return ToolResult.ok(result);
         } catch (Exception e) {

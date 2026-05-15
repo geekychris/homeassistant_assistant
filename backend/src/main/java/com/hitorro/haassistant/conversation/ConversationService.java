@@ -190,15 +190,46 @@ public class ConversationService {
                 llmCallCount, llmNs / 1_000_000, toolCallCount, toolNs / 1_000_000, totalMs);
     }
 
+    /**
+     * Last N messages of history we send back to Ollama each turn. Without
+     * this cap, every previous tool result (which can be 500KB of entity JSON)
+     * goes back in every subsequent prompt — prefill time grows unboundedly.
+     */
+    private static final int HISTORY_WINDOW = 20;
+
+    /** Old tool results re-included for context get shortened to this much content. */
+    private static final int OLD_TOOL_RESULT_BUDGET = 1500;
+
     private List<Map<String, Object>> buildOllamaHistory(Long sessionId) {
         List<Map<String, Object>> out = new ArrayList<>();
-        out.add(Map.of(
-                "role", "system",
-                "content", systemPrompt()));
-        for (ChatMessage m : messages.findBySessionIdOrderByIdAsc(sessionId)) {
+        out.add(Map.of("role", "system", "content", systemPrompt()));
+
+        List<ChatMessage> all = messages.findBySessionIdOrderByIdAsc(sessionId);
+        int firstIncluded = Math.max(0, all.size() - HISTORY_WINDOW);
+        // Boundary fix: assistant messages with tool_calls must be paired with
+        // the following tool result(s). If the window starts mid-pair, slide back.
+        while (firstIncluded > 0 && all.get(firstIncluded).getRole() == ChatMessage.Role.tool) {
+            firstIncluded--;
+        }
+
+        for (int i = firstIncluded; i < all.size(); i++) {
+            ChatMessage m = all.get(i);
             Map<String, Object> entry = new HashMap<>();
             entry.put("role", m.getRole().name());
-            entry.put("content", m.getContent() == null ? "" : m.getContent());
+
+            String content = m.getContent() == null ? "" : m.getContent();
+            // Stub out old tool results so the model still sees the structure
+            // (it called X, X returned something) but doesn't re-pay token cost.
+            // The LAST tool message we keep intact since the model may still
+            // be summarising it.
+            boolean isLatest = (i >= all.size() - 2);
+            if (m.getRole() == ChatMessage.Role.tool && !isLatest && content.length() > OLD_TOOL_RESULT_BUDGET) {
+                content = content.substring(0, OLD_TOOL_RESULT_BUDGET)
+                        + " … [truncated; " + (m.getContent().length() - OLD_TOOL_RESULT_BUDGET)
+                        + " bytes dropped from earlier turn]";
+            }
+            entry.put("content", content);
+
             if (m.getRole() == ChatMessage.Role.tool && m.getToolName() != null) {
                 entry.put("name", m.getToolName());
             }
