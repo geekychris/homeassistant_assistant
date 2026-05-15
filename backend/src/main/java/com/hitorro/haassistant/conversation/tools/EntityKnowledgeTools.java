@@ -73,6 +73,8 @@ public class EntityKnowledgeTools {
                 if (note != null) {
                     Map<String, Object> n = new HashMap<>();
                     n.put("label", note.getLabel());
+                    n.put("category", note.getCategory());
+                    n.put("tags", note.getTags());
                     n.put("note", note.getNote());
                     out.put("user_knowledge", n);
                 } else {
@@ -97,8 +99,9 @@ public class EntityKnowledgeTools {
             @Override public String description() {
                 return "Resolve a free-text name to one or more entities and return their full info " +
                        "in a single call. Tries (in order): exact entity_id, exact alias, label match, " +
-                       "friendly_name contains. Use this whenever the user mentions a device by name " +
-                       "rather than entity_id (e.g. 'the chandelier'). Returns an array of matches.";
+                       "tag match, category match, friendly_name contains. Use this whenever the user " +
+                       "mentions a device by name OR by a category/tag ('all the lights', 'the pool stuff') " +
+                       "instead of by entity_id. Returns an array of matches.";
             }
             @Override public Map<String, Object> parameterSchema() {
                 return Map.of(
@@ -128,6 +131,20 @@ public class EntityKnowledgeTools {
                 for (EntityNote n : notes.findByInstanceIdAndLabelContainingIgnoreCase(instanceId, q)) {
                     entities.findByInstanceIdAndEntityId(instanceId,  n.getEntityId()).ifPresent(add);
                 }
+                // Tag match: case-insensitive equality against any tag.
+                String needleTag = q.toLowerCase();
+                for (EntityNote n : notes.findByInstanceId(instanceId)) {
+                    List<String> ts = n.getTags();
+                    if (ts != null && ts.stream().anyMatch(t -> t.equalsIgnoreCase(needleTag))) {
+                        entities.findByInstanceIdAndEntityId(instanceId, n.getEntityId()).ifPresent(add);
+                    }
+                }
+                // Category match.
+                for (EntityNote n : notes.findByInstanceId(instanceId)) {
+                    if (q.equalsIgnoreCase(n.getCategory())) {
+                        entities.findByInstanceIdAndEntityId(instanceId, n.getEntityId()).ifPresent(add);
+                    }
+                }
                 if (matches.isEmpty()) {
                     String needle = q.toLowerCase();
                     for (HaEntity e : entities.findByInstanceId(instanceId)) {
@@ -153,6 +170,8 @@ public class EntityKnowledgeTools {
                     m.put("state", e.getState());
                     notes.findByInstanceIdAndEntityId(fInstanceId,  e.getEntityId()).ifPresent(n -> {
                         m.put("label", n.getLabel());
+                        m.put("category", n.getCategory());
+                        m.put("tags", n.getTags());
                         m.put("note", n.getNote());
                     });
                     List<String> als = aliases.findByInstanceIdAndEntityId(fInstanceId, e.getEntityId()).stream()
@@ -262,6 +281,85 @@ public class EntityKnowledgeTools {
                 if (exists) return ToolResult.ok(Map.of("entity_id", id, "alias", alias, "already", true));
                 aliases.save(new EntityAlias(instanceId, alias, id, "assistant"));
                 return ToolResult.ok(Map.of("entity_id", id, "alias", alias));
+            }
+        };
+    }
+
+    @Bean
+    public Tool setEntityCategoryTool(HaEntityRepository entities, EntityNoteRepository notes,
+                                      InstanceResolver resolver) {
+        return new Tool() {
+            @Override public String name() { return "set_entity_category"; }
+            @Override public String description() {
+                return "Override the kind of thing an entity is. Useful when HA classifies a device " +
+                       "incorrectly — e.g. a Z-Wave dimmer reported as a 'switch' but actually a 'light'. " +
+                       "Common values: light, switch, fan, outlet, pump, sensor, thermostat, motion, " +
+                       "door, lock, speaker, camera, valve. Pass null/empty to clear and fall back to " +
+                       "the HA domain.";
+            }
+            @Override public Map<String, Object> parameterSchema() {
+                return Map.of(
+                        "type", "object",
+                        "properties", Map.of(
+                                "entity_id", Map.of("type", "string"),
+                                "category", Map.of("type", "string"),
+                                "instance", Map.of("type", "string")),
+                        "required", List.of("entity_id", "category"));
+            }
+            @Override public ToolResult execute(JsonNode args) {
+                String id = args.path("entity_id").asText(null);
+                String cat = args.path("category").asText(null);
+                if (id == null) return ToolResult.error("entity_id required");
+                Long instanceId;
+                try { instanceId = resolver.resolve(args).getId(); }
+                catch (Exception e) { return ToolResult.error(e.getMessage()); }
+                if (entities.findByInstanceIdAndEntityId(instanceId, id).isEmpty())
+                    return ToolResult.error("entity_id '" + id + "' not found");
+                EntityNote n = notes.findByInstanceIdAndEntityId(instanceId, id)
+                        .orElse(new EntityNote(instanceId, id));
+                n.setCategory(cat == null || cat.isBlank() ? null : cat);
+                notes.save(n);
+                return ToolResult.ok(Map.of("entity_id", id, "category", n.getCategory() == null ? "" : n.getCategory()));
+            }
+        };
+    }
+
+    @Bean
+    public Tool setEntityTagsTool(HaEntityRepository entities, EntityNoteRepository notes,
+                                  InstanceResolver resolver) {
+        return new Tool() {
+            @Override public String name() { return "set_entity_tags"; }
+            @Override public String description() {
+                return "Replace the list of free-form tags on an entity. Tags are short words the " +
+                       "assistant can use to find things in chat — e.g. ['kitchen', 'dimmable', " +
+                       "'pendant', 'rgb']. Empty array clears all tags.";
+            }
+            @Override public Map<String, Object> parameterSchema() {
+                return Map.of(
+                        "type", "object",
+                        "properties", Map.of(
+                                "entity_id", Map.of("type", "string"),
+                                "tags", Map.of("type", "array", "items", Map.of("type", "string")),
+                                "instance", Map.of("type", "string")),
+                        "required", List.of("entity_id", "tags"));
+            }
+            @Override public ToolResult execute(JsonNode args) {
+                String id = args.path("entity_id").asText(null);
+                if (id == null) return ToolResult.error("entity_id required");
+                JsonNode tagsNode = args.get("tags");
+                if (tagsNode == null || !tagsNode.isArray()) return ToolResult.error("tags must be an array");
+                List<String> tags = new java.util.ArrayList<>();
+                tagsNode.forEach(t -> { String s = t.asText(""); if (!s.isBlank()) tags.add(s.trim()); });
+                Long instanceId;
+                try { instanceId = resolver.resolve(args).getId(); }
+                catch (Exception e) { return ToolResult.error(e.getMessage()); }
+                if (entities.findByInstanceIdAndEntityId(instanceId, id).isEmpty())
+                    return ToolResult.error("entity_id '" + id + "' not found");
+                EntityNote n = notes.findByInstanceIdAndEntityId(instanceId, id)
+                        .orElse(new EntityNote(instanceId, id));
+                n.setTags(tags.isEmpty() ? null : tags);
+                notes.save(n);
+                return ToolResult.ok(Map.of("entity_id", id, "tags", tags));
             }
         };
     }

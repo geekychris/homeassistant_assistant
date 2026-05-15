@@ -4,8 +4,22 @@ export type HaEntity = {
   entityId: string;
   domain: string;
   name: string | null;
+  friendlyName: string | null;
+  deviceClass: string | null;
+  unit: string | null;
   areaId: string | null;
   state: string | null;
+  attributes: string | null; // JSON string from HA
+};
+
+export type EntityNoteRow = {
+  instanceId: number;
+  entityId: string;
+  label: string | null;
+  category: string | null;
+  tags: string[] | null;
+  note: string | null;
+  updatedAt: string;
 };
 
 export type Schedule = {

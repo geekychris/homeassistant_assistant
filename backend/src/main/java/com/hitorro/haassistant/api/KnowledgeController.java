@@ -46,14 +46,18 @@ public class KnowledgeController {
         }
     }
 
-    public record NoteUpsertRequest(String label, String note, String instance) {}
+    public record NoteUpsertRequest(
+            String label, String note, String category,
+            java.util.List<String> tags, String instance) {}
 
     @PutMapping("/notes/{entityId}")
     public EntityNote upsertNote(@PathVariable String entityId, @RequestBody NoteUpsertRequest req) {
         Long id = resolveInstanceId(req.instance());
         EntityNote n = notes.findById(new EntityNoteId(id, entityId)).orElse(new EntityNote(id, entityId));
-        if (req.label() != null) n.setLabel(req.label());
-        if (req.note() != null) n.setNote(req.note());
+        if (req.label() != null) n.setLabel(req.label().isBlank() ? null : req.label());
+        if (req.note() != null) n.setNote(req.note().isBlank() ? null : req.note());
+        if (req.category() != null) n.setCategory(req.category().isBlank() ? null : req.category());
+        if (req.tags() != null) n.setTags(req.tags().isEmpty() ? null : req.tags());
         return notes.save(n);
     }
 

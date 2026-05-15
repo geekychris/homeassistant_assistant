@@ -1,5 +1,5 @@
 import type {
-  Area, ChatMessageRow, ConversationSession, Grouping, HaEntity, Instance, Schedule,
+  Area, ChatMessageRow, ConversationSession, EntityNoteRow, Grouping, HaEntity, Instance, Schedule,
 } from './types';
 
 async function get<T>(url: string): Promise<T> {
@@ -41,6 +41,15 @@ export const api = {
   groupings: () => get<Grouping[]>('/api/groupings'),
   runGrouping: (id: number) => send<unknown>('POST', `/api/groupings/${id}/run`),
   deleteGrouping: (id: number) => send<void>('DELETE', `/api/groupings/${id}`),
+
+  notes: (instance?: string) =>
+    get<EntityNoteRow[]>(`/api/knowledge/notes${instance ? `?instance=${encodeURIComponent(instance)}` : ''}`),
+  saveNote: (entityId: string, body: Partial<EntityNoteRow> & { instance?: string }) =>
+    send<EntityNoteRow>('PUT', `/api/knowledge/notes/${encodeURIComponent(entityId)}`, body),
+
+  control: (entityId: string, action: 'on' | 'off' | 'toggle' | 'set',
+            params?: Record<string, unknown>, instance?: string) =>
+    send<unknown>('POST', '/api/control', { entityId, action, params, instance }),
 
   sessions: () => get<ConversationSession[]>('/api/chat/sessions'),
   createSession: (title?: string) =>

@@ -212,6 +212,13 @@ public class ConversationService {
             - set_entity_label, set_entity_note, set_entity_alias — LEARN about devices.
               Use these whenever the user tells you what something is or you confirm
               a device's purpose. The knowledge persists across sessions.
+            - set_entity_category — RECLASSIFY a device. HA often labels Z-Wave dimmers
+              as 'switch' when they're really lights; set category='light' to fix.
+              Common values: light, switch, fan, outlet, pump, sensor, thermostat,
+              motion, door, lock, speaker, camera, valve. Empty clears the override.
+            - set_entity_tags — attach free-form words (kitchen, dimmable, rgb, pool…).
+              Tags are searchable via find_entity and let the user say things like
+              "all the pool stuff".
             - ask_user — a clarifying question. Use sparingly.
 
             USE THE CONVERSATION HISTORY. This is the most important rule:
