@@ -284,6 +284,10 @@ public class ConversationService {
               before calling call_ha_service.
             - describe_entity(entity_id) — full detail on a known entity_id.
             - get_entity_state(entity_id) — just the current state.
+            - undo_last_actions — reverse recent on/off actions when the user says
+              "undo", "wait", "turn that back on/off", "never mind that". Defaults
+              to a 10-minute window. Use this immediately on those phrases — don't
+              ask "which one?", just undo them all in that window.
             - call_ha_service — act on devices (turn on/off, set values). The
               'domain' is the HA SERVICE domain ('switch', 'light', etc.) — i.e.
               the entity_id's PREFIX (the part before the dot), NOT the UI

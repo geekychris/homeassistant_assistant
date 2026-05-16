@@ -5,16 +5,23 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hitorro.haassistant.conversation.Tool;
 import com.hitorro.haassistant.conversation.ToolResult;
+import com.hitorro.haassistant.db.ActionLogEntry;
+import com.hitorro.haassistant.db.ActionLogRepository;
+import com.hitorro.haassistant.db.HaEntity;
 import com.hitorro.haassistant.db.HaEntityRepository;
 import com.hitorro.haassistant.ha.HaConnectionManager;
 import com.hitorro.haassistant.ha.HomeAssistantClient;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
@@ -46,17 +53,22 @@ import java.util.concurrent.TimeUnit;
 @Component
 public class CallHaServiceTool implements Tool {
 
+    private static final Logger log = LoggerFactory.getLogger(CallHaServiceTool.class);
+
     private static final Set<String> UNIVERSAL_SERVICES = Set.of("turn_on", "turn_off", "toggle");
 
     private final HaConnectionManager conns;
     private final InstanceResolver resolver;
     private final HaEntityRepository entities;
+    private final ActionLogRepository actionLog;
     private final ObjectMapper mapper = new ObjectMapper();
 
-    public CallHaServiceTool(HaConnectionManager conns, InstanceResolver resolver, HaEntityRepository entities) {
+    public CallHaServiceTool(HaConnectionManager conns, InstanceResolver resolver,
+                             HaEntityRepository entities, ActionLogRepository actionLog) {
         this.conns = conns;
         this.resolver = resolver;
         this.entities = entities;
+        this.actionLog = actionLog;
     }
 
     @Override public String name() { return "call_ha_service"; }
@@ -204,8 +216,31 @@ public class CallHaServiceTool implements Tool {
             return ToolResult.error("Either entity_ids or domain must be provided");
         }
 
+        // Capture prev_state BEFORE the call so undo can later restore it.
+        Map<String, String> prevStates = new HashMap<>();
+        for (String eid : entityIds) {
+            Optional<HaEntity> e = entities.findByInstanceIdAndEntityId(instanceId, eid);
+            prevStates.put(eid, e.map(HaEntity::getState).orElse(null));
+        }
+
         try {
             client.callService(domain, service, entityIds, serviceData).get(15, TimeUnit.SECONDS);
+
+            // Log each entity individually so undo can target them one-by-one.
+            // We only log when the service is something we can sensibly invert
+            // (turn_on/turn_off/toggle) — logging brightness changes etc. would
+            // mislead the user about what undo can restore.
+            if (UNIVERSAL_SERVICES.contains(service) && !entityIds.isEmpty()) {
+                for (String eid : entityIds) {
+                    try {
+                        actionLog.save(new ActionLogEntry(instanceId, eid, domain, service,
+                                serviceData, prevStates.get(eid), "chat"));
+                    } catch (Exception logErr) {
+                        log.warn("failed to write action_log for {}: {}", eid, logErr.toString());
+                    }
+                }
+            }
+
             Map<String, Object> out = new LinkedHashMap<>();
             out.put("instance", client.getInstance().getName());
             out.put("called", domain + "." + service);

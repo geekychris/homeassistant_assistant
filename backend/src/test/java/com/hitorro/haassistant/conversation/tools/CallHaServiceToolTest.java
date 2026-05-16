@@ -3,6 +3,8 @@ package com.hitorro.haassistant.conversation.tools;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hitorro.haassistant.conversation.ToolResult;
+import com.hitorro.haassistant.db.ActionLogEntry;
+import com.hitorro.haassistant.db.ActionLogRepository;
 import com.hitorro.haassistant.db.HaEntity;
 import com.hitorro.haassistant.db.HaEntityRepository;
 import com.hitorro.haassistant.db.HaInstance;
@@ -32,6 +34,7 @@ class CallHaServiceToolTest {
     private final HaConnectionManager conns = mock(HaConnectionManager.class);
     private final InstanceResolver resolver = mock(InstanceResolver.class);
     private final HaEntityRepository entities = mock(HaEntityRepository.class);
+    private final ActionLogRepository actionLog = mock(ActionLogRepository.class);
     private final HomeAssistantClient client = mock(HomeAssistantClient.class);
 
     private CallHaServiceTool tool;
@@ -51,7 +54,7 @@ class CallHaServiceToolTest {
         // Default: any entity_id we ask about, exists.
         when(entities.findByInstanceIdAndEntityId(eq(INSTANCE), any()))
                 .thenAnswer(inv -> Optional.of(new HaEntity(INSTANCE, inv.getArgument(1), "switch")));
-        tool = new CallHaServiceTool(conns, resolver, entities);
+        tool = new CallHaServiceTool(conns, resolver, entities, actionLog);
     }
 
     private JsonNode args(String json) {
@@ -115,6 +118,61 @@ class CallHaServiceToolTest {
         tool.execute(args("{\"service\":\"turn_on\",\"entity_ids\":\"light.kitchen\"}"));
         verify(client).callService(eq("light"), eq("turn_on"),
                 eq(List.of("light.kitchen")), any());
+    }
+
+    @Test
+    void logs_each_entity_individually_to_action_log_on_turn_off() {
+        when(entities.findByInstanceIdAndEntityId(eq(INSTANCE), eq("switch.a")))
+                .thenAnswer(inv -> {
+                    HaEntity e = new HaEntity(INSTANCE, "switch.a", "switch");
+                    e.setState("on");
+                    return Optional.of(e);
+                });
+        when(entities.findByInstanceIdAndEntityId(eq(INSTANCE), eq("switch.b")))
+                .thenAnswer(inv -> {
+                    HaEntity e = new HaEntity(INSTANCE, "switch.b", "switch");
+                    e.setState("off");
+                    return Optional.of(e);
+                });
+
+        tool.execute(args("{\"service\":\"turn_off\"," +
+                "\"entity_ids\":[\"switch.a\",\"switch.b\"]}"));
+
+        ArgumentCaptor<ActionLogEntry> cap = ArgumentCaptor.forClass(ActionLogEntry.class);
+        verify(actionLog, times(2)).save(cap.capture());
+        List<ActionLogEntry> saved = cap.getAllValues();
+        assertThat(saved).extracting(ActionLogEntry::getEntityId)
+                .containsExactlyInAnyOrder("switch.a", "switch.b");
+        assertThat(saved).extracting(ActionLogEntry::getService).containsOnly("turn_off");
+        assertThat(saved).extracting(ActionLogEntry::getSource).containsOnly("chat");
+        assertThat(saved).extracting(ActionLogEntry::getPrevState)
+                .containsExactlyInAnyOrder("on", "off");
+    }
+
+    @Test
+    void does_not_log_non_invertible_services() {
+        // set_temperature isn't something we can undo, so we don't log it.
+        // (Mixed-domain set_temperature is rejected earlier; here we use a single
+        // climate.* entity to get past the validator.)
+        when(entities.findByInstanceIdAndEntityId(eq(INSTANCE), eq("climate.den")))
+                .thenAnswer(inv -> Optional.of(new HaEntity(INSTANCE, "climate.den", "climate")));
+
+        tool.execute(args("{\"service\":\"set_temperature\"," +
+                "\"entity_ids\":[\"climate.den\"]," +
+                "\"service_data\":{\"temperature\":70}}"));
+
+        verify(actionLog, never()).save(any(ActionLogEntry.class));
+    }
+
+    @Test
+    void does_not_log_when_ha_call_fails() {
+        when(client.callService(anyString(), anyString(), anyList(), any()))
+                .thenReturn(CompletableFuture.failedFuture(new RuntimeException("boom")));
+
+        ToolResult r = tool.execute(args("{\"service\":\"turn_on\",\"entity_ids\":[\"switch.a\"]}"));
+
+        assertThat(r.output().toString()).contains("HA call failed");
+        verify(actionLog, never()).save(any(ActionLogEntry.class));
     }
 
     @Test
