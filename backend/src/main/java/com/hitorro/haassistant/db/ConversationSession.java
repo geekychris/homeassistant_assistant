@@ -20,16 +20,30 @@ public class ConversationSession {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt = Instant.now();
 
+    @Column(nullable = false)
+    private String source = "web";
+
+    @Column(name = "external_id")
+    private String externalId;
+
     protected ConversationSession() {}
 
     public ConversationSession(String title) {
         this.title = title;
     }
 
+    public ConversationSession(String title, String source, String externalId) {
+        this.title = title;
+        this.source = source;
+        this.externalId = externalId;
+    }
+
     public Long getId() { return id; }
     public String getTitle() { return title; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
+    public String getSource() { return source; }
+    public String getExternalId() { return externalId; }
 
     public void setTitle(String title) { this.title = title; }
     public void touch() { this.updatedAt = Instant.now(); }

@@ -32,6 +32,11 @@ haassistant:
   ollama:
     url: ${OLLAMA_URL:http://localhost:11434}
     model: ${OLLAMA_MODEL:llama3.3}
+  telegram:
+    # Empty token disables the bridge entirely. Allowlist is a CSV of numeric
+    # chat ids; only those chats can talk to the assistant.
+    token: ${TELEGRAM_TOKEN:}
+    allowed-chat-ids: ${TELEGRAM_ALLOWED_CHAT_IDS:}
 
 logging:
   level:
