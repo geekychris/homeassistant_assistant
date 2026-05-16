@@ -1,0 +1,163 @@
+#!/usr/bin/env python3
+"""
+hass — tiny REPL/one-shot CLI for the HA-assistant backend.
+
+  hass "turn off the kitchen chandelier"     # one-shot
+  hass                                       # REPL
+  hass --new                                 # force a fresh session
+  hass --history                             # print current session and exit
+  hass --sessions                            # list known sessions
+
+Config (auto-created on first run): ~/.config/hass-cli.json
+
+  {
+    "base_url": "http://localhost:8080",
+    "session_id": 1
+  }
+
+Same backend, same conversation memory the web UI sees. No streaming —
+we POST the message and print the assistant's final reply plus the
+timing stats the backend returns.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import sys
+import urllib.error
+import urllib.request
+from pathlib import Path
+
+CONFIG_PATH = Path(os.environ.get("HASS_CLI_CONFIG",
+                                  Path.home() / ".config" / "hass-cli.json"))
+DEFAULT_BASE_URL = "http://localhost:8080"
+
+
+def load_config() -> dict:
+    if CONFIG_PATH.exists():
+        try:
+            return json.loads(CONFIG_PATH.read_text())
+        except json.JSONDecodeError:
+            print(f"warning: {CONFIG_PATH} is not valid JSON, ignoring", file=sys.stderr)
+    return {}
+
+
+def save_config(cfg: dict) -> None:
+    CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    CONFIG_PATH.write_text(json.dumps(cfg, indent=2) + "\n")
+
+
+def http(method: str, url: str, body: dict | None = None) -> dict | list | None:
+    data = json.dumps(body).encode() if body is not None else None
+    req = urllib.request.Request(url, data=data, method=method)
+    if data is not None:
+        req.add_header("Content-Type", "application/json")
+    try:
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            raw = resp.read()
+            return json.loads(raw) if raw else None
+    except urllib.error.HTTPError as e:
+        sys.exit(f"HTTP {e.code} from {url}: {e.read().decode(errors='replace')}")
+    except urllib.error.URLError as e:
+        sys.exit(f"cannot reach {url}: {e.reason}")
+
+
+def ensure_session(cfg: dict, force_new: bool = False) -> int:
+    if not force_new and isinstance(cfg.get("session_id"), int):
+        return cfg["session_id"]
+    title = f"cli {os.uname().nodename}"
+    created = http("POST", f"{cfg['base_url']}/api/chat/sessions", {"title": title})
+    sid = created["id"]
+    cfg["session_id"] = sid
+    save_config(cfg)
+    return sid
+
+
+def send_one(cfg: dict, sid: int, text: str) -> None:
+    result = http("POST", f"{cfg['base_url']}/api/chat/sessions/{sid}/messages",
+                  {"text": text})
+    reply = result.get("assistantText") or "(no reply)"
+    print(reply)
+    stats = (f"  [llm {result.get('llmCalls', 0)}× / {result.get('llmMs', 0)}ms, "
+             f"tool {result.get('toolCalls', 0)}× / {result.get('toolMs', 0)}ms, "
+             f"total {result.get('totalMs', 0)}ms]")
+    print(stats, file=sys.stderr)
+
+
+def print_history(cfg: dict, sid: int) -> None:
+    msgs = http("GET", f"{cfg['base_url']}/api/chat/sessions/{sid}/messages") or []
+    for m in msgs:
+        role = m.get("role", "?")
+        content = m.get("content", "")
+        if role == "tool":
+            tag = f"tool[{m.get('toolName', '?')}]"
+            preview = content if len(content) <= 240 else content[:240] + " …"
+            print(f"  {tag}: {preview}")
+        else:
+            print(f"{role}: {content}")
+
+
+def list_sessions(cfg: dict) -> None:
+    sessions = http("GET", f"{cfg['base_url']}/api/chat/sessions") or []
+    current = cfg.get("session_id")
+    for s in sessions:
+        marker = "*" if s.get("id") == current else " "
+        print(f"{marker} {s.get('id'):>4}  {s.get('title', '')}")
+
+
+def repl(cfg: dict, sid: int) -> None:
+    print(f"hass (session {sid}). Ctrl-D to quit.")
+    while True:
+        try:
+            line = input("> ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            return
+        if not line:
+            continue
+        if line in (":q", "exit", "quit"):
+            return
+        if line == ":new":
+            sid = ensure_session(cfg, force_new=True)
+            print(f"new session {sid}")
+            continue
+        if line == ":history":
+            print_history(cfg, sid)
+            continue
+        send_one(cfg, sid, line)
+
+
+def main() -> None:
+    p = argparse.ArgumentParser(description="HA-assistant CLI")
+    p.add_argument("message", nargs="*", help="message to send (REPL if omitted)")
+    p.add_argument("--new", action="store_true", help="start a fresh session")
+    p.add_argument("--history", action="store_true", help="print the current session and exit")
+    p.add_argument("--sessions", action="store_true", help="list sessions and exit")
+    p.add_argument("--base-url", help="override backend URL")
+    args = p.parse_args()
+
+    cfg = load_config()
+    cfg.setdefault("base_url", DEFAULT_BASE_URL)
+    if args.base_url:
+        cfg["base_url"] = args.base_url
+    save_config(cfg)
+
+    if args.sessions:
+        list_sessions(cfg)
+        return
+
+    sid = ensure_session(cfg, force_new=args.new)
+
+    if args.history:
+        print_history(cfg, sid)
+        return
+
+    if args.message:
+        send_one(cfg, sid, " ".join(args.message))
+    else:
+        repl(cfg, sid)
+
+
+if __name__ == "__main__":
+    main()
