@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/logo.png" alt="Homeassistant Assistant logo" width="180">
+</p>
+
 # homeassistant_assistant
 
 A conversational layer on top of [Home Assistant](https://www.home-assistant.io/).
